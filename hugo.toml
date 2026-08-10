@@ -1,5 +1,5 @@
-baseURL = "https://hhiroshell.github.io/blog/"
-title = "alpaca-lab.dev"
+baseURL = "https://alpaca-lab.blog/"
+title = "alpaca-lab.blog"
 theme = ["PaperMod"]
 defaultContentLanguage = "en"
 defaultContentLanguageInSubdir = true
