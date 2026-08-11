@@ -1,12 +1,4 @@
-/*
-The theme's default font stack (core/reset.css) only lists Latin system
-fonts, so on Japanese pages the browser falls through to the generic
-`sans-serif` keyword and picks whatever CJK font it feels like (which can
-look noticeably heavier/lighter or more dated than the Latin system font
-used on the English pages). List each platform's native Japanese UI font
-right after its Latin counterpart so both languages render with the same
-"native OS font" feel.
-*/
+/* Add native Japanese fonts so ja pages match the look of en pages. */
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans',
         'Segoe UI', 'Yu Gothic', YuGothic, Meiryo,
