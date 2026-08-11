@@ -1,0 +1,311 @@
+<!doctype html><html lang=ja dir=auto data-theme=auto><head><meta charset=utf-8><meta http-equiv=X-UA-Compatible content="IE=edge"><meta name=viewport content="width=device-width,initial-scale=1,shrink-to-fit=no"><meta name=robots content="index, follow"><title>kubeletのAPIを調べてみた | alpaca-lab.blog</title><meta name=keywords content="kubernetes"><meta name=description content="これはなに
+ひょんなことからkubeletのAPIを使った開発をしてみたくなりまして、そのための調査をしたので共有したいと思います。
+自分は今までこれといって触る機会がなく、コンテナのメトリクスを取るのに使われているということで、たまーに「ああ、kubeletさんのAPIは今日も頑張ってくれているのだなぁ」と思いを馳せるくらいの温度感でした。Kubernetesエンジニアの多くが、同じような感想を持たれているのではないでしょうか。
+そんな縁の下の力持ち、kubeletのAPIさん、この記事をきっかけに、今までより少しだけ身近に感じてくれたらいいなって、そんなふうに思います♪
+
+📘【note】
+この記事はKubernetes Advent Calendar 2022の19日目です。
+
+どんなAPIがあるの
+kubeletのAPIの詳細を記したドキュメントが見つけられなかったので、以下の箇所を起点にして、コードを追って調べていきます。
+
+https://github.com/kubernetes/kubernetes/blob/v1.25.5/pkg/kubelet/server/server.go
+
+以下、調査の結果わかったもの。
+Kubernetesリソースの取得
+
+/pods
+
+kubeletと同一Node上の、Podリソースのリストを取得できる
+
+
+
+メトリクスの取得
+
+/metrics
+
+kubelet自身の各種メトリクスがを取得できる
+
+
+/metrics/cadvisor
+
+kubeletと同一Node上の、コンテナのCPU使用量などの各種メトリクスを取得できる
+kubeletにはcAdvisorが組み込まれており、それが提供するメトリクスを取得する。そのあたりの詳しい話は@ryysudさんの記事を参照ください
+
+
+/metrics/probes
+
+kubeletと同一Node上の、コンテナのProbe(Readiness/Liveness/StartUp)の成否を集計したメトリクスを取得できる
+
+
+/metrics/resource
+
+kubeletと同一Node上の、コンテナ単位、Pod単位それぞれのCPU、メモリ使用量を取得できる
+v0.6.0以降のMetrics Serverはこのエンドポイントからメトリクスを収集している1
+
+
+/stats/summary
+
+kubeletがあるNodeと、そのNode上のPodのCPU、メモリ、ネットワーク、ディスク関連のメトリクスを取得できる
+他はPrometheusのExporterの形式だが、このエンドポイントはJSONで値が取得できる
+v0.5.x以前のMetrics Serverはこのエンドポイントからメトリクスを収集している1
+
+
+
+kubectlコマンドの機能で内部的に利用されるもの
+以下は、kubectlのサブコマンドを実行したときに使われているAPIと推測されます。
+
+/run
+/exec
+/attach
+/portForward
+/logs
+
+パスの名前から察するに run, exec, attach, port-forward, logs の各コマンドで使われているものだと思われます。
+他
+
+/checkpoint
+
+Kubernetes v1.25からalpha機能として提供されているCheckpoint Restoreで使われるAPI
+ContainerCheckpoint フィーチャーゲートを有効にしつつ、コンテナランタイムとしてこれに対応するものを利用していると利用可能になる
+Checkpoint Restore機能については、KubeCon NA 2021のセッションがあります
+
+
+/debug/pprof
+
+pprofプロファイラのエンドポイント
+
+
+/debug/flags/v
+
+kubeletで利用可能な起動フラグの一覧を取得できる
+
+
+
+認証、認可の仕組み
+認証、認可については以下のドキュメントがあります。
+
+https://kubernetes.io/docs/reference/access-authn-authz/kubelet-authn-authz/
+
+ポイントをピックアップすると、以下のような感じです。
+
+認証
+
+認証はデフォルトではOFF
+X.509クライアント証明書認証とAPI Bearer Token認証をかけることができる
+
+
+認可
+
+Role/ClusterRoleで nodes/[sub-resource] に対する権限を与えるとアクセスが許可される
+APIのパスに応じて、対応するsub-resource名が異なってくる（具体的な対応関係は上記のリンクを参照）
+
+
+
+実際にアクセスしてみる
+というわけで、API Bearer Tokenによる認証がかかったkubeletのAPIにアクセスしてみます。
+ここでは簡単のためにKubernetes上にデプロイしたPodから、kubeletのAPIにアクセスすることにします。"><meta name=author content="hhiroshell"><link rel=canonical href=https://alpaca-lab.blog/ja/posts/getting-started-with-kubelet-api/><link crossorigin=anonymous href=/assets/css/stylesheet.7c72f86b9871ccf20705ac8dd817e345fe6a5beac24e64d3cd8b18c5f97d8936.css integrity="sha256-fHL4a5hxzPIHBayN2BfjRf5qW+rCTmTTzYsYxfl9iTY=" rel="preload stylesheet" as=style><link rel=icon href=https://alpaca-lab.blog/favicon.ico><link rel=icon type=image/png sizes=16x16 href=https://alpaca-lab.blog/favicon-16x16.png><link rel=icon type=image/png sizes=32x32 href=https://alpaca-lab.blog/favicon-32x32.png><link rel=apple-touch-icon href=https://alpaca-lab.blog/apple-touch-icon.png><link rel=mask-icon href=https://alpaca-lab.blog/safari-pinned-tab.svg><meta name=theme-color content="#2e2e33"><meta name=msapplication-TileColor content="#2e2e33"><link rel=alternate hreflang=en href=https://alpaca-lab.blog/en/posts/getting-started-with-kubelet-api/><link rel=alternate hreflang=ja href=https://alpaca-lab.blog/ja/posts/getting-started-with-kubelet-api/><noscript><style>#theme-toggle,.top-link{display:none}</style><style>@media(prefers-color-scheme:dark){:root{--theme:rgb(29, 30, 32);--entry:rgb(46, 46, 51);--primary:rgb(218, 218, 219);--secondary:rgb(155, 156, 157);--tertiary:rgb(65, 66, 68);--content:rgb(196, 196, 197);--code-block-bg:rgb(46, 46, 51);--code-bg:rgb(55, 56, 62);--border:rgb(51, 51, 51);color-scheme:dark}.list{background:var(--theme)}.toc{background:var(--entry)}}@media(prefers-color-scheme:light){.list::-webkit-scrollbar-thumb{border-color:var(--code-bg)}}</style></noscript><script>localStorage.getItem("pref-theme")==="dark"?document.querySelector("html").dataset.theme="dark":localStorage.getItem("pref-theme")==="light"?document.querySelector("html").dataset.theme="light":window.matchMedia("(prefers-color-scheme: dark)").matches?document.querySelector("html").dataset.theme="dark":document.querySelector("html").dataset.theme="light"</script><meta property="og:url" content="https://alpaca-lab.blog/ja/posts/getting-started-with-kubelet-api/"><meta property="og:site_name" content="alpaca-lab.blog"><meta property="og:title" content="kubeletのAPIを調べてみた"><meta property="og:description" content="これはなに ひょんなことからkubeletのAPIを使った開発をしてみたくなりまして、そのための調査をしたので共有したいと思います。
+自分は今までこれといって触る機会がなく、コンテナのメトリクスを取るのに使われているということで、たまーに「ああ、kubeletさんのAPIは今日も頑張ってくれているのだなぁ」と思いを馳せるくらいの温度感でした。Kubernetesエンジニアの多くが、同じような感想を持たれているのではないでしょうか。
+そんな縁の下の力持ち、kubeletのAPIさん、この記事をきっかけに、今までより少しだけ身近に感じてくれたらいいなって、そんなふうに思います♪
+📘【note】 この記事はKubernetes Advent Calendar 2022の19日目です。
+どんなAPIがあるの kubeletのAPIの詳細を記したドキュメントが見つけられなかったので、以下の箇所を起点にして、コードを追って調べていきます。
+https://github.com/kubernetes/kubernetes/blob/v1.25.5/pkg/kubelet/server/server.go 以下、調査の結果わかったもの。
+Kubernetesリソースの取得 /pods kubeletと同一Node上の、Podリソースのリストを取得できる メトリクスの取得 /metrics kubelet自身の各種メトリクスがを取得できる /metrics/cadvisor kubeletと同一Node上の、コンテナのCPU使用量などの各種メトリクスを取得できる kubeletにはcAdvisorが組み込まれており、それが提供するメトリクスを取得する。そのあたりの詳しい話は@ryysudさんの記事を参照ください /metrics/probes kubeletと同一Node上の、コンテナのProbe(Readiness/Liveness/StartUp)の成否を集計したメトリクスを取得できる /metrics/resource kubeletと同一Node上の、コンテナ単位、Pod単位それぞれのCPU、メモリ使用量を取得できる v0.6.0以降のMetrics Serverはこのエンドポイントからメトリクスを収集している1 /stats/summary kubeletがあるNodeと、そのNode上のPodのCPU、メモリ、ネットワーク、ディスク関連のメトリクスを取得できる 他はPrometheusのExporterの形式だが、このエンドポイントはJSONで値が取得できる v0.5.x以前のMetrics Serverはこのエンドポイントからメトリクスを収集している1 kubectlコマンドの機能で内部的に利用されるもの 以下は、kubectlのサブコマンドを実行したときに使われているAPIと推測されます。
+/run /exec /attach /portForward /logs パスの名前から察するに run, exec, attach, port-forward, logs の各コマンドで使われているものだと思われます。
+他 /checkpoint Kubernetes v1.25からalpha機能として提供されているCheckpoint Restoreで使われるAPI ContainerCheckpoint フィーチャーゲートを有効にしつつ、コンテナランタイムとしてこれに対応するものを利用していると利用可能になる Checkpoint Restore機能については、KubeCon NA 2021のセッションがあります /debug/pprof pprofプロファイラのエンドポイント /debug/flags/v kubeletで利用可能な起動フラグの一覧を取得できる 認証、認可の仕組み 認証、認可については以下のドキュメントがあります。
+https://kubernetes.io/docs/reference/access-authn-authz/kubelet-authn-authz/ ポイントをピックアップすると、以下のような感じです。
+認証 認証はデフォルトではOFF X.509クライアント証明書認証とAPI Bearer Token認証をかけることができる 認可 Role/ClusterRoleで nodes/[sub-resource] に対する権限を与えるとアクセスが許可される APIのパスに応じて、対応するsub-resource名が異なってくる（具体的な対応関係は上記のリンクを参照） 実際にアクセスしてみる というわけで、API Bearer Tokenによる認証がかかったkubeletのAPIにアクセスしてみます。 ここでは簡単のためにKubernetes上にデプロイしたPodから、kubeletのAPIにアクセスすることにします。"><meta property="og:locale" content="ja"><meta property="og:type" content="article"><meta property="article:section" content="posts"><meta property="article:published_time" content="2022-12-19T00:00:00+00:00"><meta property="article:modified_time" content="2022-12-19T00:00:00+00:00"><meta property="article:tag" content="Kubernetes"><meta name=twitter:card content="summary"><meta name=twitter:title content="kubeletのAPIを調べてみた"><meta name=twitter:description content="これはなに
+ひょんなことからkubeletのAPIを使った開発をしてみたくなりまして、そのための調査をしたので共有したいと思います。
+自分は今までこれといって触る機会がなく、コンテナのメトリクスを取るのに使われているということで、たまーに「ああ、kubeletさんのAPIは今日も頑張ってくれているのだなぁ」と思いを馳せるくらいの温度感でした。Kubernetesエンジニアの多くが、同じような感想を持たれているのではないでしょうか。
+そんな縁の下の力持ち、kubeletのAPIさん、この記事をきっかけに、今までより少しだけ身近に感じてくれたらいいなって、そんなふうに思います♪
+
+📘【note】
+この記事はKubernetes Advent Calendar 2022の19日目です。
+
+どんなAPIがあるの
+kubeletのAPIの詳細を記したドキュメントが見つけられなかったので、以下の箇所を起点にして、コードを追って調べていきます。
+
+https://github.com/kubernetes/kubernetes/blob/v1.25.5/pkg/kubelet/server/server.go
+
+以下、調査の結果わかったもの。
+Kubernetesリソースの取得
+
+/pods
+
+kubeletと同一Node上の、Podリソースのリストを取得できる
+
+
+
+メトリクスの取得
+
+/metrics
+
+kubelet自身の各種メトリクスがを取得できる
+
+
+/metrics/cadvisor
+
+kubeletと同一Node上の、コンテナのCPU使用量などの各種メトリクスを取得できる
+kubeletにはcAdvisorが組み込まれており、それが提供するメトリクスを取得する。そのあたりの詳しい話は@ryysudさんの記事を参照ください
+
+
+/metrics/probes
+
+kubeletと同一Node上の、コンテナのProbe(Readiness/Liveness/StartUp)の成否を集計したメトリクスを取得できる
+
+
+/metrics/resource
+
+kubeletと同一Node上の、コンテナ単位、Pod単位それぞれのCPU、メモリ使用量を取得できる
+v0.6.0以降のMetrics Serverはこのエンドポイントからメトリクスを収集している1
+
+
+/stats/summary
+
+kubeletがあるNodeと、そのNode上のPodのCPU、メモリ、ネットワーク、ディスク関連のメトリクスを取得できる
+他はPrometheusのExporterの形式だが、このエンドポイントはJSONで値が取得できる
+v0.5.x以前のMetrics Serverはこのエンドポイントからメトリクスを収集している1
+
+
+
+kubectlコマンドの機能で内部的に利用されるもの
+以下は、kubectlのサブコマンドを実行したときに使われているAPIと推測されます。
+
+/run
+/exec
+/attach
+/portForward
+/logs
+
+パスの名前から察するに run, exec, attach, port-forward, logs の各コマンドで使われているものだと思われます。
+他
+
+/checkpoint
+
+Kubernetes v1.25からalpha機能として提供されているCheckpoint Restoreで使われるAPI
+ContainerCheckpoint フィーチャーゲートを有効にしつつ、コンテナランタイムとしてこれに対応するものを利用していると利用可能になる
+Checkpoint Restore機能については、KubeCon NA 2021のセッションがあります
+
+
+/debug/pprof
+
+pprofプロファイラのエンドポイント
+
+
+/debug/flags/v
+
+kubeletで利用可能な起動フラグの一覧を取得できる
+
+
+
+認証、認可の仕組み
+認証、認可については以下のドキュメントがあります。
+
+https://kubernetes.io/docs/reference/access-authn-authz/kubelet-authn-authz/
+
+ポイントをピックアップすると、以下のような感じです。
+
+認証
+
+認証はデフォルトではOFF
+X.509クライアント証明書認証とAPI Bearer Token認証をかけることができる
+
+
+認可
+
+Role/ClusterRoleで nodes/[sub-resource] に対する権限を与えるとアクセスが許可される
+APIのパスに応じて、対応するsub-resource名が異なってくる（具体的な対応関係は上記のリンクを参照）
+
+
+
+実際にアクセスしてみる
+というわけで、API Bearer Tokenによる認証がかかったkubeletのAPIにアクセスしてみます。
+ここでは簡単のためにKubernetes上にデプロイしたPodから、kubeletのAPIにアクセスすることにします。"><script type=application/ld+json>{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Posts","item":"https://alpaca-lab.blog/ja/posts/"},{"@type":"ListItem","position":2,"name":"kubeletのAPIを調べてみた","item":"https://alpaca-lab.blog/ja/posts/getting-started-with-kubelet-api/"}]}</script><script type=application/ld+json>{"@context":"https://schema.org","@type":"BlogPosting","headline":"kubeletのAPIを調べてみた","name":"kubeletのAPIを調べてみた","description":"これはなに ひょんなことからkubeletのAPIを使った開発をしてみたくなりまして、そのための調査をしたので共有したいと思います。\n自分は今までこれといって触る機会がなく、コンテナのメトリクスを取るのに使われているということで、たまーに「ああ、kubeletさんのAPIは今日も頑張ってくれているのだなぁ」と思いを馳せるくらいの温度感でした。Kubernetesエンジニアの多くが、同じような感想を持たれているのではないでしょうか。\nそんな縁の下の力持ち、kubeletのAPIさん、この記事をきっかけに、今までより少しだけ身近に感じてくれたらいいなって、そんなふうに思います♪\n📘【note】 この記事はKubernetes Advent Calendar 2022の19日目です。\nどんなAPIがあるの kubeletのAPIの詳細を記したドキュメントが見つけられなかったので、以下の箇所を起点にして、コードを追って調べていきます。\nhttps://github.com/kubernetes/kubernetes/blob/v1.25.5/pkg/kubelet/server/server.go 以下、調査の結果わかったもの。\nKubernetesリソースの取得 /pods kubeletと同一Node上の、Podリソースのリストを取得できる メトリクスの取得 /metrics kubelet自身の各種メトリクスがを取得できる /metrics/cadvisor kubeletと同一Node上の、コンテナのCPU使用量などの各種メトリクスを取得できる kubeletにはcAdvisorが組み込まれており、それが提供するメトリクスを取得する。そのあたりの詳しい話は@ryysudさんの記事を参照ください /metrics/probes kubeletと同一Node上の、コンテナのProbe(Readiness/Liveness/StartUp)の成否を集計したメトリクスを取得できる /metrics/resource kubeletと同一Node上の、コンテナ単位、Pod単位それぞれのCPU、メモリ使用量を取得できる v0.6.0以降のMetrics Serverはこのエンドポイントからメトリクスを収集している1 /stats/summary kubeletがあるNodeと、そのNode上のPodのCPU、メモリ、ネットワーク、ディスク関連のメトリクスを取得できる 他はPrometheusのExporterの形式だが、このエンドポイントはJSONで値が取得できる v0.5.x以前のMetrics Serverはこのエンドポイントからメトリクスを収集している1 kubectlコマンドの機能で内部的に利用されるもの 以下は、kubectlのサブコマンドを実行したときに使われているAPIと推測されます。\n/run /exec /attach /portForward /logs パスの名前から察するに run, exec, attach, port-forward, logs の各コマンドで使われているものだと思われます。\n他 /checkpoint Kubernetes v1.25からalpha機能として提供されているCheckpoint Restoreで使われるAPI ContainerCheckpoint フィーチャーゲートを有効にしつつ、コンテナランタイムとしてこれに対応するものを利用していると利用可能になる Checkpoint Restore機能については、KubeCon NA 2021のセッションがあります /debug/pprof pprofプロファイラのエンドポイント /debug/flags/v kubeletで利用可能な起動フラグの一覧を取得できる 認証、認可の仕組み 認証、認可については以下のドキュメントがあります。\nhttps://kubernetes.io/docs/reference/access-authn-authz/kubelet-authn-authz/ ポイントをピックアップすると、以下のような感じです。\n認証 認証はデフォルトではOFF X.509クライアント証明書認証とAPI Bearer Token認証をかけることができる 認可 Role/ClusterRoleで nodes/[sub-resource] に対する権限を与えるとアクセスが許可される APIのパスに応じて、対応するsub-resource名が異なってくる（具体的な対応関係は上記のリンクを参照） 実際にアクセスしてみる というわけで、API Bearer Tokenによる認証がかかったkubeletのAPIにアクセスしてみます。 ここでは簡単のためにKubernetes上にデプロイしたPodから、kubeletのAPIにアクセスすることにします。\n","keywords":["kubernetes"],"articleBody":"これはなに ひょんなことからkubeletのAPIを使った開発をしてみたくなりまして、そのための調査をしたので共有したいと思います。\n自分は今までこれといって触る機会がなく、コンテナのメトリクスを取るのに使われているということで、たまーに「ああ、kubeletさんのAPIは今日も頑張ってくれているのだなぁ」と思いを馳せるくらいの温度感でした。Kubernetesエンジニアの多くが、同じような感想を持たれているのではないでしょうか。\nそんな縁の下の力持ち、kubeletのAPIさん、この記事をきっかけに、今までより少しだけ身近に感じてくれたらいいなって、そんなふうに思います♪\n📘【note】 この記事はKubernetes Advent Calendar 2022の19日目です。\nどんなAPIがあるの kubeletのAPIの詳細を記したドキュメントが見つけられなかったので、以下の箇所を起点にして、コードを追って調べていきます。\nhttps://github.com/kubernetes/kubernetes/blob/v1.25.5/pkg/kubelet/server/server.go 以下、調査の結果わかったもの。\nKubernetesリソースの取得 /pods kubeletと同一Node上の、Podリソースのリストを取得できる メトリクスの取得 /metrics kubelet自身の各種メトリクスがを取得できる /metrics/cadvisor kubeletと同一Node上の、コンテナのCPU使用量などの各種メトリクスを取得できる kubeletにはcAdvisorが組み込まれており、それが提供するメトリクスを取得する。そのあたりの詳しい話は@ryysudさんの記事を参照ください /metrics/probes kubeletと同一Node上の、コンテナのProbe(Readiness/Liveness/StartUp)の成否を集計したメトリクスを取得できる /metrics/resource kubeletと同一Node上の、コンテナ単位、Pod単位それぞれのCPU、メモリ使用量を取得できる v0.6.0以降のMetrics Serverはこのエンドポイントからメトリクスを収集している1 /stats/summary kubeletがあるNodeと、そのNode上のPodのCPU、メモリ、ネットワーク、ディスク関連のメトリクスを取得できる 他はPrometheusのExporterの形式だが、このエンドポイントはJSONで値が取得できる v0.5.x以前のMetrics Serverはこのエンドポイントからメトリクスを収集している1 kubectlコマンドの機能で内部的に利用されるもの 以下は、kubectlのサブコマンドを実行したときに使われているAPIと推測されます。\n/run /exec /attach /portForward /logs パスの名前から察するに run, exec, attach, port-forward, logs の各コマンドで使われているものだと思われます。\n他 /checkpoint Kubernetes v1.25からalpha機能として提供されているCheckpoint Restoreで使われるAPI ContainerCheckpoint フィーチャーゲートを有効にしつつ、コンテナランタイムとしてこれに対応するものを利用していると利用可能になる Checkpoint Restore機能については、KubeCon NA 2021のセッションがあります /debug/pprof pprofプロファイラのエンドポイント /debug/flags/v kubeletで利用可能な起動フラグの一覧を取得できる 認証、認可の仕組み 認証、認可については以下のドキュメントがあります。\nhttps://kubernetes.io/docs/reference/access-authn-authz/kubelet-authn-authz/ ポイントをピックアップすると、以下のような感じです。\n認証 認証はデフォルトではOFF X.509クライアント証明書認証とAPI Bearer Token認証をかけることができる 認可 Role/ClusterRoleで nodes/[sub-resource] に対する権限を与えるとアクセスが許可される APIのパスに応じて、対応するsub-resource名が異なってくる（具体的な対応関係は上記のリンクを参照） 実際にアクセスしてみる というわけで、API Bearer Tokenによる認証がかかったkubeletのAPIにアクセスしてみます。 ここでは簡単のためにKubernetes上にデプロイしたPodから、kubeletのAPIにアクセスすることにします。\nまずは、以下のようなmanifestを用意します。\napiVersion: v1 kind: Pod metadata: name: kubelet-api-experiment spec: containers: - name: centos image: centos7 command: [\"/bin/sh\", \"-c\"] args: - | tail -f /dev/null serviceAccount: kubelet-api-experiment --- apiVersion: v1 kind: ServiceAccount metadata: name: kubelet-api-experiment namespace: default --- apiVersion: rbac.authorization.k8s.io/v1 kind: ClusterRole metadata: name: kubelet-api-experiment rules: - apiGroups: - \"\" resources: - nodes/log - nodes/metrics - nodes/proxy - nodes/stats verbs: - get - create - update - patch - delete --- apiVersion: rbac.authorization.k8s.io/v1 kind: ClusterRoleBinding metadata: name: kubelet-api-experiment roleRef: apiGroup: rbac.authorization.k8s.io kind: ClusterRole name: kubelet-api-experiment subjects: - kind: ServiceAccount name: kubelet-api-experiment namespace: default ClusterRoleでkubeletのAPIに対する全権限がつくようにしています。\n次にこれをクラスタにapplyします。\n$ kubectl apply -f kubelet-api-experiment.yaml 後で使うので適当なNodeのIPアドレスを控えておきます。\n$ kubectl get $(kubectl get node -o name | head -1) -o jsonpath='{.status.addresses[?(@.type == \"InternalIP\")].address}' デプロイしたPodのコンソールに入ります。\n$ kubectl exec -it kubelet-api-experiment -- /bin/sh APIにアクセスする前の準備として、上で控えておいたNodeのIPと、ServiceAccountのトークンを環境変数に設定しておきます。\nsh-4.2# export NODE_IP=[上で控えたIP] sh-4.2# export TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token) 以下のようにcurlを実行すると、指定したNode上のkubeletのAPIにアクセスできます。\nsh-4.2# curl -H \"Authorization: Bearer $TOKEN\" \"https://${NODE_IP}:10250/pods\" 結局何につかうの というわけで一応APIを呼び出すところまでできはしたわけですが、一体どんな使いみちがあるのでしょうか。\n冒頭に書いた「kubelet APIを使った開発」では、DaemonSetとして各Nodeに配置するエージェントで、自分がいるNode上のPod一覧を /pods から取得しようと考えています。\nDaemonSetでデプロイするとNodeを足す毎にエージェントの数が増えていくので、kube-apiserverからPod情報を取得していると、そこにかかる負荷がどんどん大きくなってします。 そこで、Node上のkubeletからPod情報を取得して負荷をオフロードするというアイデアです。\nNode A +--------------------------------------------------------------------------+ | Get Pods on | | +------------+ this Node +---------+ | | Do Something Super Awesome! \u003c----+ Daemon Pod +-------------\u003e kubelet | | | +------------+ +---------+ | | | +--------------------------------------------------------------------------+ Node B +--------------------------------------------------------------------------+ | Get Pods on | | +------------+ this Node +---------+ | | Do Something Super Awesome! \u003c----+ Daemon Pod +-------------\u003e kubelet | | | +------------+ +---------+ | | | +--------------------------------------------------------------------------+ Node C ... エージェントは自分がデプロイされたNode内で仕事をするだけの情報が手に入ればいいので、そういう意味でもkubeletのAPIは都合が良いですし。\nあと、/metrics/probes のメトリクスは監視に仕込んでおくと使い所がありそうです。 Podが予期せぬシャットダウンを起こしたとき、livenessProbeの失敗が原因であればこちらのメトリクスから補足できます（Prometheus Operatorを使ってると最初からこれを集めるようになっていたりするのかな？）。\nこれを呼んで頂いている方からも、なにかいいアイデアがあったら教えていただけると嬉しいです！\n以上です。 最後まで読んでいただきありがとうございました。メリークリスマス！\nhttps://kubernetes.io/docs/tasks/debug/debug-cluster/resource-metrics-pipeline/#summary-api-source ↩︎ ↩︎\n","wordCount":"306","inLanguage":"ja","datePublished":"2022-12-19T00:00:00Z","dateModified":"2022-12-19T00:00:00Z","author":{"@type":"Person","name":"hhiroshell"},"mainEntityOfPage":{"@type":"WebPage","@id":"https://alpaca-lab.blog/ja/posts/getting-started-with-kubelet-api/"},"publisher":{"@type":"Organization","name":"alpaca-lab.blog","logo":{"@type":"ImageObject","url":"https://alpaca-lab.blog/favicon.ico"}}}</script></head><body id=top><header class=header><nav class=nav><div class=logo><a href=https://alpaca-lab.blog/ja/ accesskey=h title="alpaca-lab.blog (Alt + H)">alpaca-lab.blog</a><div class=logo-switches><button id=theme-toggle accesskey=t title="(Alt + T)" aria-label="Toggle theme">
+<svg id="moon" width="24" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+<svg id="sun" width="24" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg></button><ul class=lang-switch><li>|</li><li><a href=https://alpaca-lab.blog/en/ title=English aria-label=English>En</a></li></ul></div></div><ul id=menu><li><a href=https://alpaca-lab.blog/ja/posts/ title=記事><span>記事</span></a></li><li><a href=https://alpaca-lab.blog/ja/tags/ title=タグ><span>タグ</span></a></li></ul></nav></header><main class=main><article class=post-single><header class=post-header><div class=breadcrumbs><a href=https://alpaca-lab.blog/ja/>ホーム</a>&nbsp;»&nbsp;<a href=https://alpaca-lab.blog/ja/posts/>Posts</a></div><h1 class="post-title entry-hint-parent">kubeletのAPIを調べてみた</h1><div class=post-meta><span title='2022-12-19 00:00:00 +0000 UTC'>2022年12月19日</span>&nbsp;·&nbsp;<span>2 分</span>&nbsp;·&nbsp;<span>hhiroshell</span>&nbsp;|&nbsp;<span>言語:</span><ul class=i18n_list><li><a href=https://alpaca-lab.blog/en/posts/getting-started-with-kubelet-api/>En</a></li></ul></div></header><div class=post-content><h2 id=これはなに>これはなに<a hidden class=anchor aria-hidden=true href=#これはなに>#</a></h2><p>ひょんなことからkubeletのAPIを使った開発をしてみたくなりまして、そのための調査をしたので共有したいと思います。</p><p>自分は今までこれといって触る機会がなく、コンテナのメトリクスを取るのに使われているということで、たまーに「ああ、kubeletさんのAPIは今日も頑張ってくれているのだなぁ」と思いを馳せるくらいの温度感でした。Kubernetesエンジニアの多くが、同じような感想を持たれているのではないでしょうか。</p><p>そんな縁の下の力持ち、kubeletのAPIさん、この記事をきっかけに、今までより少しだけ身近に感じてくれたらいいなって、そんなふうに思います♪</p><blockquote><p>📘【note】
+この記事は<a href=https://qiita.com/advent-calendar/2022/kubernetes>Kubernetes Advent Calendar 2022</a>の19日目です。</p></blockquote><h2 id=どんなapiがあるの>どんなAPIがあるの<a hidden class=anchor aria-hidden=true href=#どんなapiがあるの>#</a></h2><p>kubeletのAPIの詳細を記したドキュメントが見つけられなかったので、以下の箇所を起点にして、コードを追って調べていきます。</p><ul><li><a href=https://github.com/kubernetes/kubernetes/blob/v1.25.5/pkg/kubelet/server/server.go>https://github.com/kubernetes/kubernetes/blob/v1.25.5/pkg/kubelet/server/server.go</a></li></ul><p>以下、調査の結果わかったもの。</p><h4 id=kubernetesリソースの取得>Kubernetesリソースの取得<a hidden class=anchor aria-hidden=true href=#kubernetesリソースの取得>#</a></h4><ul><li><code>/pods</code><ul><li>kubeletと同一Node上の、Podリソースのリストを取得できる</li></ul></li></ul><h4 id=メトリクスの取得>メトリクスの取得<a hidden class=anchor aria-hidden=true href=#メトリクスの取得>#</a></h4><ul><li><code>/metrics</code><ul><li>kubelet自身の各種メトリクスがを取得できる</li></ul></li><li><code>/metrics/cadvisor</code><ul><li>kubeletと同一Node上の、コンテナのCPU使用量などの各種メトリクスを取得できる</li><li>kubeletにはcAdvisorが組み込まれており、それが提供するメトリクスを取得する。そのあたりの詳しい話は<a href=https://qiita.com/ryysud/items/23eab7110de7337a8bf3>@ryysudさんの記事</a>を参照ください</li></ul></li><li><code>/metrics/probes</code><ul><li>kubeletと同一Node上の、コンテナのProbe(Readiness/Liveness/StartUp)の成否を集計したメトリクスを取得できる</li></ul></li><li><code>/metrics/resource</code><ul><li>kubeletと同一Node上の、コンテナ単位、Pod単位それぞれのCPU、メモリ使用量を取得できる</li><li>v0.6.0以降のMetrics Serverはこのエンドポイントからメトリクスを収集している<sup id=fnref:1><a href=#fn:1 class=footnote-ref role=doc-noteref>1</a></sup></li></ul></li><li><code>/stats/summary</code><ul><li>kubeletがあるNodeと、そのNode上のPodのCPU、メモリ、ネットワーク、ディスク関連のメトリクスを取得できる</li><li>他はPrometheusのExporterの形式だが、このエンドポイントはJSONで値が取得できる</li><li>v0.5.x以前のMetrics Serverはこのエンドポイントからメトリクスを収集している<sup id=fnref1:1><a href=#fn:1 class=footnote-ref role=doc-noteref>1</a></sup></li></ul></li></ul><h4 id=kubectlコマンドの機能で内部的に利用されるもの>kubectlコマンドの機能で内部的に利用されるもの<a hidden class=anchor aria-hidden=true href=#kubectlコマンドの機能で内部的に利用されるもの>#</a></h4><p>以下は、kubectlのサブコマンドを実行したときに使われているAPIと推測されます。</p><ul><li><code>/run</code></li><li><code>/exec</code></li><li><code>/attach</code></li><li><code>/portForward</code></li><li><code>/logs</code></li></ul><p>パスの名前から察するに <code>run</code>, <code>exec</code>, <code>attach</code>, <code>port-forward</code>, <code>logs</code> の各コマンドで使われているものだと思われます。</p><h4 id=他>他<a hidden class=anchor aria-hidden=true href=#他>#</a></h4><ul><li><code>/checkpoint</code><ul><li>Kubernetes v1.25からalpha機能として提供されているCheckpoint Restoreで使われるAPI</li><li><code>ContainerCheckpoint</code> フィーチャーゲートを有効にしつつ、コンテナランタイムとしてこれに対応するものを利用していると利用可能になる</li><li>Checkpoint Restore機能については、<a href="https://www.youtube.com/watch?v=0RUDoTi-Lw4">KubeCon NA 2021のセッション</a>があります</li></ul></li><li><code>/debug/pprof</code><ul><li>pprofプロファイラのエンドポイント</li></ul></li><li><code>/debug/flags/v</code><ul><li>kubeletで利用可能な起動フラグの一覧を取得できる</li></ul></li></ul><h2 id=認証認可の仕組み>認証、認可の仕組み<a hidden class=anchor aria-hidden=true href=#認証認可の仕組み>#</a></h2><p>認証、認可については以下のドキュメントがあります。</p><ul><li><a href=https://kubernetes.io/docs/reference/access-authn-authz/kubelet-authn-authz/>https://kubernetes.io/docs/reference/access-authn-authz/kubelet-authn-authz/</a></li></ul><p>ポイントをピックアップすると、以下のような感じです。</p><ul><li>認証<ul><li>認証はデフォルトではOFF</li><li>X.509クライアント証明書認証とAPI Bearer Token認証をかけることができる</li></ul></li><li>認可<ul><li>Role/ClusterRoleで <code>nodes/[sub-resource]</code> に対する権限を与えるとアクセスが許可される</li><li>APIのパスに応じて、対応するsub-resource名が異なってくる（具体的な対応関係は上記のリンクを参照）</li></ul></li></ul><h2 id=実際にアクセスしてみる>実際にアクセスしてみる<a hidden class=anchor aria-hidden=true href=#実際にアクセスしてみる>#</a></h2><p>というわけで、API Bearer Tokenによる認証がかかったkubeletのAPIにアクセスしてみます。
+ここでは簡単のためにKubernetes上にデプロイしたPodから、kubeletのAPIにアクセスすることにします。</p><p>まずは、以下のようなmanifestを用意します。</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none><code class=language-yaml data-lang=yaml><span style=display:flex><span><span style=color:#f92672>apiVersion</span>: <span style=color:#ae81ff>v1</span>
+</span></span><span style=display:flex><span><span style=color:#f92672>kind</span>: <span style=color:#ae81ff>Pod</span>
+</span></span><span style=display:flex><span><span style=color:#f92672>metadata</span>:
+</span></span><span style=display:flex><span>  <span style=color:#f92672>name</span>: <span style=color:#ae81ff>kubelet-api-experiment</span>
+</span></span><span style=display:flex><span><span style=color:#f92672>spec</span>:
+</span></span><span style=display:flex><span>  <span style=color:#f92672>containers</span>:
+</span></span><span style=display:flex><span>  - <span style=color:#f92672>name</span>: <span style=color:#ae81ff>centos</span>
+</span></span><span style=display:flex><span>    <span style=color:#f92672>image</span>: <span style=color:#ae81ff>centos7</span>
+</span></span><span style=display:flex><span>    <span style=color:#f92672>command</span>: [<span style=color:#e6db74>&#34;/bin/sh&#34;</span>, <span style=color:#e6db74>&#34;-c&#34;</span>]
+</span></span><span style=display:flex><span>    <span style=color:#f92672>args</span>:
+</span></span><span style=display:flex><span>      - |<span style=color:#e6db74>
+</span></span></span><span style=display:flex><span><span style=color:#e6db74>        tail -f /dev/null</span>
+</span></span><span style=display:flex><span>  <span style=color:#f92672>serviceAccount</span>: <span style=color:#ae81ff>kubelet-api-experiment</span>
+</span></span><span style=display:flex><span>---
+</span></span><span style=display:flex><span><span style=color:#f92672>apiVersion</span>: <span style=color:#ae81ff>v1</span>
+</span></span><span style=display:flex><span><span style=color:#f92672>kind</span>: <span style=color:#ae81ff>ServiceAccount</span>
+</span></span><span style=display:flex><span><span style=color:#f92672>metadata</span>:
+</span></span><span style=display:flex><span>  <span style=color:#f92672>name</span>: <span style=color:#ae81ff>kubelet-api-experiment</span>
+</span></span><span style=display:flex><span>  <span style=color:#f92672>namespace</span>: <span style=color:#ae81ff>default</span>
+</span></span><span style=display:flex><span>---
+</span></span><span style=display:flex><span><span style=color:#f92672>apiVersion</span>: <span style=color:#ae81ff>rbac.authorization.k8s.io/v1</span>
+</span></span><span style=display:flex><span><span style=color:#f92672>kind</span>: <span style=color:#ae81ff>ClusterRole</span>
+</span></span><span style=display:flex><span><span style=color:#f92672>metadata</span>:
+</span></span><span style=display:flex><span>  <span style=color:#f92672>name</span>: <span style=color:#ae81ff>kubelet-api-experiment</span>
+</span></span><span style=display:flex><span><span style=color:#f92672>rules</span>:
+</span></span><span style=display:flex><span>- <span style=color:#f92672>apiGroups</span>:
+</span></span><span style=display:flex><span>  - <span style=color:#e6db74>&#34;&#34;</span>
+</span></span><span style=display:flex><span>  <span style=color:#f92672>resources</span>:
+</span></span><span style=display:flex><span>  - <span style=color:#ae81ff>nodes/log</span>
+</span></span><span style=display:flex><span>  - <span style=color:#ae81ff>nodes/metrics</span>
+</span></span><span style=display:flex><span>  - <span style=color:#ae81ff>nodes/proxy</span>
+</span></span><span style=display:flex><span>  - <span style=color:#ae81ff>nodes/stats</span>
+</span></span><span style=display:flex><span>  <span style=color:#f92672>verbs</span>:
+</span></span><span style=display:flex><span>  - <span style=color:#ae81ff>get</span>
+</span></span><span style=display:flex><span>  - <span style=color:#ae81ff>create</span>
+</span></span><span style=display:flex><span>  - <span style=color:#ae81ff>update</span>
+</span></span><span style=display:flex><span>  - <span style=color:#ae81ff>patch</span>
+</span></span><span style=display:flex><span>  - <span style=color:#ae81ff>delete</span>
+</span></span><span style=display:flex><span>---
+</span></span><span style=display:flex><span><span style=color:#f92672>apiVersion</span>: <span style=color:#ae81ff>rbac.authorization.k8s.io/v1</span>
+</span></span><span style=display:flex><span><span style=color:#f92672>kind</span>: <span style=color:#ae81ff>ClusterRoleBinding</span>
+</span></span><span style=display:flex><span><span style=color:#f92672>metadata</span>:
+</span></span><span style=display:flex><span>  <span style=color:#f92672>name</span>: <span style=color:#ae81ff>kubelet-api-experiment</span>
+</span></span><span style=display:flex><span><span style=color:#f92672>roleRef</span>:
+</span></span><span style=display:flex><span>  <span style=color:#f92672>apiGroup</span>: <span style=color:#ae81ff>rbac.authorization.k8s.io</span>
+</span></span><span style=display:flex><span>  <span style=color:#f92672>kind</span>: <span style=color:#ae81ff>ClusterRole</span>
+</span></span><span style=display:flex><span>  <span style=color:#f92672>name</span>: <span style=color:#ae81ff>kubelet-api-experiment</span>
+</span></span><span style=display:flex><span><span style=color:#f92672>subjects</span>:
+</span></span><span style=display:flex><span>- <span style=color:#f92672>kind</span>: <span style=color:#ae81ff>ServiceAccount</span>
+</span></span><span style=display:flex><span>  <span style=color:#f92672>name</span>: <span style=color:#ae81ff>kubelet-api-experiment</span>
+</span></span><span style=display:flex><span>  <span style=color:#f92672>namespace</span>: <span style=color:#ae81ff>default</span>
+</span></span></code></pre></div><p>ClusterRoleでkubeletのAPIに対する全権限がつくようにしています。</p><p>次にこれをクラスタにapplyします。</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none><code class=language-console data-lang=console><span style=display:flex><span>$ kubectl apply -f kubelet-api-experiment.yaml
+</span></span></code></pre></div><p>後で使うので適当なNodeのIPアドレスを控えておきます。</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none><code class=language-console data-lang=console><span style=display:flex><span>$ kubectl get <span style=color:#66d9ef>$(</span>kubectl get node -o name | head -1<span style=color:#66d9ef>)</span> -o jsonpath<span style=color:#f92672>=</span><span style=color:#e6db74>&#39;{.status.addresses[?(@.type == &#34;InternalIP&#34;)].address}&#39;</span>
+</span></span></code></pre></div><p>デプロイしたPodのコンソールに入ります。</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none><code class=language-console data-lang=console><span style=display:flex><span>$ kubectl exec -it kubelet-api-experiment -- /bin/sh
+</span></span></code></pre></div><p>APIにアクセスする前の準備として、上で控えておいたNodeのIPと、ServiceAccountのトークンを環境変数に設定しておきます。</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none><code class=language-console data-lang=console><span style=display:flex><span>sh-4.2# export NODE_IP=[上で控えたIP]
+</span></span><span style=display:flex><span><span style=color:#960050;background-color:#1e0010>
+</span></span></span><span style=display:flex><span>sh-4.2# export TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+</span></span></code></pre></div><p>以下のようにcurlを実行すると、指定したNode上のkubeletのAPIにアクセスできます。</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none><code class=language-console data-lang=console><span style=display:flex><span>sh-4.2# curl -H &#34;Authorization: Bearer $TOKEN&#34; &#34;https://${NODE_IP}:10250/pods&#34;
+</span></span></code></pre></div><h2 id=結局何につかうの>結局何につかうの<a hidden class=anchor aria-hidden=true href=#結局何につかうの>#</a></h2><p>というわけで一応APIを呼び出すところまでできはしたわけですが、一体どんな使いみちがあるのでしょうか。</p><p>冒頭に書いた「kubelet APIを使った開発」では、DaemonSetとして各Nodeに配置するエージェントで、自分がいるNode上のPod一覧を <code>/pods</code> から取得しようと考えています。</p><p>DaemonSetでデプロイするとNodeを足す毎にエージェントの数が増えていくので、kube-apiserverからPod情報を取得していると、そこにかかる負荷がどんどん大きくなってします。
+そこで、Node上のkubeletからPod情報を取得して負荷をオフロードするというアイデアです。</p><pre tabindex=0><code>  Node A
++--------------------------------------------------------------------------+
+|                                                  Get Pods on             |
+|                                   +------------+  this Node  +---------+ |
+|  Do Something Super Awesome! &lt;----+ Daemon Pod +-------------&gt; kubelet | |
+|                                   +------------+             +---------+ |
+|                                                                          |
++--------------------------------------------------------------------------+
+  Node B
++--------------------------------------------------------------------------+
+|                                                  Get Pods on             |
+|                                   +------------+  this Node  +---------+ |
+|  Do Something Super Awesome! &lt;----+ Daemon Pod +-------------&gt; kubelet | |
+|                                   +------------+             +---------+ |
+|                                                                          |
++--------------------------------------------------------------------------+
+  Node C
+  ...
+</code></pre><p>エージェントは自分がデプロイされたNode内で仕事をするだけの情報が手に入ればいいので、そういう意味でもkubeletのAPIは都合が良いですし。</p><p>あと、<code>/metrics/probes</code> のメトリクスは監視に仕込んでおくと使い所がありそうです。
+Podが予期せぬシャットダウンを起こしたとき、livenessProbeの失敗が原因であればこちらのメトリクスから補足できます（Prometheus Operatorを使ってると最初からこれを集めるようになっていたりするのかな？）。</p><p>これを呼んで頂いている方からも、なにかいいアイデアがあったら教えていただけると嬉しいです！</p><p>以上です。
+最後まで読んでいただきありがとうございました。メリークリスマス！</p><div class=footnotes role=doc-endnotes><hr><ol><li id=fn:1><p><a href=https://kubernetes.io/docs/tasks/debug/debug-cluster/resource-metrics-pipeline/#summary-api-source>https://kubernetes.io/docs/tasks/debug/debug-cluster/resource-metrics-pipeline/#summary-api-source</a>&#160;<a href=#fnref:1 class=footnote-backref role=doc-backlink>&#8617;&#xfe0e;</a>&#160;<a href=#fnref1:1 class=footnote-backref role=doc-backlink>&#8617;&#xfe0e;</a></p></li></ol></div></div><footer class=post-footer><ul class=post-tags><li><a href=https://alpaca-lab.blog/ja/tags/kubernetes/>Kubernetes</a></li></ul><nav class=paginav><a class=prev href=https://alpaca-lab.blog/ja/posts/kubernetes-startup-sequence-of-pods/><span class=title>« 前へ</span><br><span>Pod内に複数のコンテナがある場合の起動シーケンス</span>
+</a><a class=next href=https://alpaca-lab.blog/ja/posts/custom-controller-for-out-of-cluster-events/><span class=title>次へ »</span><br><span>カスタムコントローラーで任意のイベントを起点にReconcileを実行する</span></a></nav></footer></article></main><footer class=footer><span>&copy; 2026 <a href=https://alpaca-lab.blog/ja/>alpaca-lab.blog</a></span> ·
+<span>Powered by
+<a href=https://gohugo.io/ rel="noopener noreferrer" target=_blank>Hugo</a> &
+<a href=https://github.com/adityatelange/hugo-PaperMod/ rel=noopener target=_blank>PaperMod</a></span></footer><a href=#top aria-label="go to top" title="Go to Top (Alt + G)" class=top-link id=top-link accesskey=g><svg viewBox="0 0 12 6" fill="currentColor"><path d="M12 6H0l6-6z"/></svg>
+</a><script>let menu=document.getElementById("menu");if(menu){const e=localStorage.getItem("menu-scroll-position");e&&(menu.scrollLeft=parseInt(e,10)),menu.onscroll=function(){localStorage.setItem("menu-scroll-position",menu.scrollLeft)}}document.querySelectorAll('a[href^="#"]').forEach(e=>{e.addEventListener("click",function(e){e.preventDefault();var t=this.getAttribute("href").substr(1);window.matchMedia("(prefers-reduced-motion: reduce)").matches?document.querySelector(`[id='${decodeURIComponent(t)}']`).scrollIntoView():document.querySelector(`[id='${decodeURIComponent(t)}']`).scrollIntoView({behavior:"smooth"}),t==="top"?history.replaceState(null,null," "):history.pushState(null,null,`#${t}`)})})</script><script>var mybutton=document.getElementById("top-link");window.onscroll=function(){document.body.scrollTop>800||document.documentElement.scrollTop>800?(mybutton.style.visibility="visible",mybutton.style.opacity="1"):(mybutton.style.visibility="hidden",mybutton.style.opacity="0")}</script><script>document.getElementById("theme-toggle").addEventListener("click",()=>{const e=document.querySelector("html");e.dataset.theme==="dark"?(e.dataset.theme="light",localStorage.setItem("pref-theme","light")):(e.dataset.theme="dark",localStorage.setItem("pref-theme","dark"))})</script><script>document.querySelectorAll("pre > code").forEach(e=>{const n=e.parentNode.parentNode,t=document.createElement("button");t.classList.add("copy-code"),t.innerHTML="コピー";function s(){t.innerHTML="コピーされました!",setTimeout(()=>{t.innerHTML="コピー"},2e3)}t.addEventListener("click",t=>{if("clipboard"in navigator){navigator.clipboard.writeText(e.textContent),s();return}const n=document.createRange();n.selectNodeContents(e);const o=window.getSelection();o.removeAllRanges(),o.addRange(n);try{document.execCommand("copy"),s()}catch{}o.removeRange(n)}),n.classList.contains("highlight")?n.appendChild(t):n.parentNode.firstChild==n||(e.parentNode.parentNode.parentNode.parentNode.parentNode.nodeName=="TABLE"?e.parentNode.parentNode.parentNode.parentNode.parentNode.appendChild(t):e.parentNode.appendChild(t))})</script></body></html>

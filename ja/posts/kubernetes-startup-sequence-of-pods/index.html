@@ -1,0 +1,362 @@
+<!doctype html><html lang=ja dir=auto data-theme=auto><head><meta charset=utf-8><meta http-equiv=X-UA-Compatible content="IE=edge"><meta name=viewport content="width=device-width,initial-scale=1,shrink-to-fit=no"><meta name=robots content="index, follow"><title>Pod内に複数のコンテナがある場合の起動シーケンス | alpaca-lab.blog</title><meta name=keywords content="kubernetes"><meta name=description content='これはなに
+「Kubernetesマイクロサービス開発の実践」というKubernetes本を執筆しまして、めでたく先日発売となりました！ぜひ買ってくださいー。
+
+「Kubernetesマイクロサービス開発の実践」
+
+この書籍の第7章には、PodオブジェクトがAPI Serverに作成されてから実際にPodが起動するまでの処理を解説した箇所があるのですが、諸事情のため書籍では載せられなかったマニアックな挙動があります。それは、Podに複数のコンテナがあり、いずれかまたはすべてのコンテナでpostStart Lifecycle Hookを使っている場合です。このエントリーではそのようなPodが起動するとき、どのような動作になるかを書きます。
+
+📘【note】
+これはKubernetes Advent Calendar 2023の20日目の記事です。
+
+お題のPod
+本記事では、以下のマニフェストのような複数のコンテナ(container1, container2)を含むPodを使って実験します。ちょっと長いですが、やっていることは以下のような感じです。
+
+container1はメインの処理、postStartフック、Readines Probe、Liveness Probeで、それぞれ1秒おきに /var/log/startup-sequence-test/message にログを出力する
+container2はメインの処理で、1秒おきに、上と同じファイルにログを出力する
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: startup-sequence-test
+  namespace: default
+spec:
+  containers:
+  - name: container1
+    image: busybox:latest
+    args:
+    - /bin/sh
+    - -c
+    - |
+      for i in $(seq 60); do
+        echo "$(date): container1 / main" >> /var/log/startup-sequence-test/message
+        sleep 1
+      done
+      tail -f /dev/null
+    lifecycle:
+      postStart:
+        exec:
+          command:
+          - "/bin/sh"
+          - "-c"
+          - |
+            for i in $(seq 30); do
+              echo "$(date): container1 / post start hook" >> /var/log/startup-sequence-test/message
+              sleep 1
+            done
+    readinessProbe:
+      exec:
+        command:
+        - "/bin/sh"
+        - "-c"
+        - |
+          echo "$(date): container1 / readiness probe" >> /var/log/startup-sequence-test/message
+    livenessProbe:
+      exec:
+        command:
+        - "/bin/sh"
+        - "-c"
+        - |
+          echo "$(date): container1 / liveness probe" >> /var/log/startup-sequence-test/message
+    volumeMounts:
+    - mountPath: /var/log/startup-sequence-test
+      name: log-volume
+  - name: container2
+    image: busybox:latest
+    args:
+    - /bin/sh
+    - -c
+    - |
+      for i in $(seq 60); do
+        echo "$(date): container2 / main" >> /var/log/startup-sequence-test/message
+        sleep 1
+      done
+      tail -f /dev/null
+    volumeMounts:
+    - mountPath: /var/log/startup-sequence-test
+      name: log-volume
+  volumes:
+  - name: log-volume
+    emptyDir: {}
+このPodをクラスタに適用した後、/var/log/startup-sequence-test/message に書かれている内容を確認すれば、それぞれの処理がどのような順番で実行されているかが分かるというわけです。'><meta name=author content="hhiroshell"><link rel=canonical href=https://alpaca-lab.blog/ja/posts/kubernetes-startup-sequence-of-pods/><link crossorigin=anonymous href=/assets/css/stylesheet.7c72f86b9871ccf20705ac8dd817e345fe6a5beac24e64d3cd8b18c5f97d8936.css integrity="sha256-fHL4a5hxzPIHBayN2BfjRf5qW+rCTmTTzYsYxfl9iTY=" rel="preload stylesheet" as=style><link rel=icon href=https://alpaca-lab.blog/favicon.ico><link rel=icon type=image/png sizes=16x16 href=https://alpaca-lab.blog/favicon-16x16.png><link rel=icon type=image/png sizes=32x32 href=https://alpaca-lab.blog/favicon-32x32.png><link rel=apple-touch-icon href=https://alpaca-lab.blog/apple-touch-icon.png><link rel=mask-icon href=https://alpaca-lab.blog/safari-pinned-tab.svg><meta name=theme-color content="#2e2e33"><meta name=msapplication-TileColor content="#2e2e33"><link rel=alternate hreflang=en href=https://alpaca-lab.blog/en/posts/kubernetes-startup-sequence-of-pods/><link rel=alternate hreflang=ja href=https://alpaca-lab.blog/ja/posts/kubernetes-startup-sequence-of-pods/><noscript><style>#theme-toggle,.top-link{display:none}</style><style>@media(prefers-color-scheme:dark){:root{--theme:rgb(29, 30, 32);--entry:rgb(46, 46, 51);--primary:rgb(218, 218, 219);--secondary:rgb(155, 156, 157);--tertiary:rgb(65, 66, 68);--content:rgb(196, 196, 197);--code-block-bg:rgb(46, 46, 51);--code-bg:rgb(55, 56, 62);--border:rgb(51, 51, 51);color-scheme:dark}.list{background:var(--theme)}.toc{background:var(--entry)}}@media(prefers-color-scheme:light){.list::-webkit-scrollbar-thumb{border-color:var(--code-bg)}}</style></noscript><script>localStorage.getItem("pref-theme")==="dark"?document.querySelector("html").dataset.theme="dark":localStorage.getItem("pref-theme")==="light"?document.querySelector("html").dataset.theme="light":window.matchMedia("(prefers-color-scheme: dark)").matches?document.querySelector("html").dataset.theme="dark":document.querySelector("html").dataset.theme="light"</script><meta property="og:url" content="https://alpaca-lab.blog/ja/posts/kubernetes-startup-sequence-of-pods/"><meta property="og:site_name" content="alpaca-lab.blog"><meta property="og:title" content="Pod内に複数のコンテナがある場合の起動シーケンス"><meta property="og:description" content='これはなに 「Kubernetesマイクロサービス開発の実践」というKubernetes本を執筆しまして、めでたく先日発売となりました！ぜひ買ってくださいー。
+「Kubernetesマイクロサービス開発の実践」 この書籍の第7章には、PodオブジェクトがAPI Serverに作成されてから実際にPodが起動するまでの処理を解説した箇所があるのですが、諸事情のため書籍では載せられなかったマニアックな挙動があります。それは、Podに複数のコンテナがあり、いずれかまたはすべてのコンテナでpostStart Lifecycle Hookを使っている場合です。このエントリーではそのようなPodが起動するとき、どのような動作になるかを書きます。
+📘【note】 これはKubernetes Advent Calendar 2023の20日目の記事です。
+お題のPod 本記事では、以下のマニフェストのような複数のコンテナ(container1, container2)を含むPodを使って実験します。ちょっと長いですが、やっていることは以下のような感じです。
+container1はメインの処理、postStartフック、Readines Probe、Liveness Probeで、それぞれ1秒おきに /var/log/startup-sequence-test/message にログを出力する container2はメインの処理で、1秒おきに、上と同じファイルにログを出力する apiVersion: v1 kind: Pod metadata: name: startup-sequence-test namespace: default spec: containers: - name: container1 image: busybox:latest args: - /bin/sh - -c - | for i in $(seq 60); do echo "$(date): container1 / main" >> /var/log/startup-sequence-test/message sleep 1 done tail -f /dev/null lifecycle: postStart: exec: command: - "/bin/sh" - "-c" - | for i in $(seq 30); do echo "$(date): container1 / post start hook" >> /var/log/startup-sequence-test/message sleep 1 done readinessProbe: exec: command: - "/bin/sh" - "-c" - | echo "$(date): container1 / readiness probe" >> /var/log/startup-sequence-test/message livenessProbe: exec: command: - "/bin/sh" - "-c" - | echo "$(date): container1 / liveness probe" >> /var/log/startup-sequence-test/message volumeMounts: - mountPath: /var/log/startup-sequence-test name: log-volume - name: container2 image: busybox:latest args: - /bin/sh - -c - | for i in $(seq 60); do echo "$(date): container2 / main" >> /var/log/startup-sequence-test/message sleep 1 done tail -f /dev/null volumeMounts: - mountPath: /var/log/startup-sequence-test name: log-volume volumes: - name: log-volume emptyDir: {} このPodをクラスタに適用した後、/var/log/startup-sequence-test/message に書かれている内容を確認すれば、それぞれの処理がどのような順番で実行されているかが分かるというわけです。'><meta property="og:locale" content="ja"><meta property="og:type" content="article"><meta property="article:section" content="posts"><meta property="article:published_time" content="2023-12-21T00:00:00+00:00"><meta property="article:modified_time" content="2023-12-21T00:00:00+00:00"><meta property="article:tag" content="Kubernetes"><meta name=twitter:card content="summary"><meta name=twitter:title content="Pod内に複数のコンテナがある場合の起動シーケンス"><meta name=twitter:description content='これはなに
+「Kubernetesマイクロサービス開発の実践」というKubernetes本を執筆しまして、めでたく先日発売となりました！ぜひ買ってくださいー。
+
+「Kubernetesマイクロサービス開発の実践」
+
+この書籍の第7章には、PodオブジェクトがAPI Serverに作成されてから実際にPodが起動するまでの処理を解説した箇所があるのですが、諸事情のため書籍では載せられなかったマニアックな挙動があります。それは、Podに複数のコンテナがあり、いずれかまたはすべてのコンテナでpostStart Lifecycle Hookを使っている場合です。このエントリーではそのようなPodが起動するとき、どのような動作になるかを書きます。
+
+📘【note】
+これはKubernetes Advent Calendar 2023の20日目の記事です。
+
+お題のPod
+本記事では、以下のマニフェストのような複数のコンテナ(container1, container2)を含むPodを使って実験します。ちょっと長いですが、やっていることは以下のような感じです。
+
+container1はメインの処理、postStartフック、Readines Probe、Liveness Probeで、それぞれ1秒おきに /var/log/startup-sequence-test/message にログを出力する
+container2はメインの処理で、1秒おきに、上と同じファイルにログを出力する
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: startup-sequence-test
+  namespace: default
+spec:
+  containers:
+  - name: container1
+    image: busybox:latest
+    args:
+    - /bin/sh
+    - -c
+    - |
+      for i in $(seq 60); do
+        echo "$(date): container1 / main" >> /var/log/startup-sequence-test/message
+        sleep 1
+      done
+      tail -f /dev/null
+    lifecycle:
+      postStart:
+        exec:
+          command:
+          - "/bin/sh"
+          - "-c"
+          - |
+            for i in $(seq 30); do
+              echo "$(date): container1 / post start hook" >> /var/log/startup-sequence-test/message
+              sleep 1
+            done
+    readinessProbe:
+      exec:
+        command:
+        - "/bin/sh"
+        - "-c"
+        - |
+          echo "$(date): container1 / readiness probe" >> /var/log/startup-sequence-test/message
+    livenessProbe:
+      exec:
+        command:
+        - "/bin/sh"
+        - "-c"
+        - |
+          echo "$(date): container1 / liveness probe" >> /var/log/startup-sequence-test/message
+    volumeMounts:
+    - mountPath: /var/log/startup-sequence-test
+      name: log-volume
+  - name: container2
+    image: busybox:latest
+    args:
+    - /bin/sh
+    - -c
+    - |
+      for i in $(seq 60); do
+        echo "$(date): container2 / main" >> /var/log/startup-sequence-test/message
+        sleep 1
+      done
+      tail -f /dev/null
+    volumeMounts:
+    - mountPath: /var/log/startup-sequence-test
+      name: log-volume
+  volumes:
+  - name: log-volume
+    emptyDir: {}
+このPodをクラスタに適用した後、/var/log/startup-sequence-test/message に書かれている内容を確認すれば、それぞれの処理がどのような順番で実行されているかが分かるというわけです。'><script type=application/ld+json>{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Posts","item":"https://alpaca-lab.blog/ja/posts/"},{"@type":"ListItem","position":2,"name":"Pod内に複数のコンテナがある場合の起動シーケンス","item":"https://alpaca-lab.blog/ja/posts/kubernetes-startup-sequence-of-pods/"}]}</script><script type=application/ld+json>{"@context":"https://schema.org","@type":"BlogPosting","headline":"Pod内に複数のコンテナがある場合の起動シーケンス","name":"Pod内に複数のコンテナがある場合の起動シーケンス","description":"これはなに 「Kubernetesマイクロサービス開発の実践」というKubernetes本を執筆しまして、めでたく先日発売となりました！ぜひ買ってくださいー。\n「Kubernetesマイクロサービス開発の実践」 この書籍の第7章には、PodオブジェクトがAPI Serverに作成されてから実際にPodが起動するまでの処理を解説した箇所があるのですが、諸事情のため書籍では載せられなかったマニアックな挙動があります。それは、Podに複数のコンテナがあり、いずれかまたはすべてのコンテナでpostStart Lifecycle Hookを使っている場合です。このエントリーではそのようなPodが起動するとき、どのような動作になるかを書きます。\n📘【note】 これはKubernetes Advent Calendar 2023の20日目の記事です。\nお題のPod 本記事では、以下のマニフェストのような複数のコンテナ(container1, container2)を含むPodを使って実験します。ちょっと長いですが、やっていることは以下のような感じです。\ncontainer1はメインの処理、postStartフック、Readines Probe、Liveness Probeで、それぞれ1秒おきに /var/log/startup-sequence-test/message にログを出力する container2はメインの処理で、1秒おきに、上と同じファイルにログを出力する apiVersion: v1 kind: Pod metadata: name: startup-sequence-test namespace: default spec: containers: - name: container1 image: busybox:latest args: - /bin/sh - -c - | for i in $(seq 60); do echo \u0026#34;$(date): container1 / main\u0026#34; \u0026gt;\u0026gt; /var/log/startup-sequence-test/message sleep 1 done tail -f /dev/null lifecycle: postStart: exec: command: - \u0026#34;/bin/sh\u0026#34; - \u0026#34;-c\u0026#34; - | for i in $(seq 30); do echo \u0026#34;$(date): container1 / post start hook\u0026#34; \u0026gt;\u0026gt; /var/log/startup-sequence-test/message sleep 1 done readinessProbe: exec: command: - \u0026#34;/bin/sh\u0026#34; - \u0026#34;-c\u0026#34; - | echo \u0026#34;$(date): container1 / readiness probe\u0026#34; \u0026gt;\u0026gt; /var/log/startup-sequence-test/message livenessProbe: exec: command: - \u0026#34;/bin/sh\u0026#34; - \u0026#34;-c\u0026#34; - | echo \u0026#34;$(date): container1 / liveness probe\u0026#34; \u0026gt;\u0026gt; /var/log/startup-sequence-test/message volumeMounts: - mountPath: /var/log/startup-sequence-test name: log-volume - name: container2 image: busybox:latest args: - /bin/sh - -c - | for i in $(seq 60); do echo \u0026#34;$(date): container2 / main\u0026#34; \u0026gt;\u0026gt; /var/log/startup-sequence-test/message sleep 1 done tail -f /dev/null volumeMounts: - mountPath: /var/log/startup-sequence-test name: log-volume volumes: - name: log-volume emptyDir: {} このPodをクラスタに適用した後、/var/log/startup-sequence-test/message に書かれている内容を確認すれば、それぞれの処理がどのような順番で実行されているかが分かるというわけです。\n","keywords":["kubernetes"],"articleBody":"これはなに 「Kubernetesマイクロサービス開発の実践」というKubernetes本を執筆しまして、めでたく先日発売となりました！ぜひ買ってくださいー。\n「Kubernetesマイクロサービス開発の実践」 この書籍の第7章には、PodオブジェクトがAPI Serverに作成されてから実際にPodが起動するまでの処理を解説した箇所があるのですが、諸事情のため書籍では載せられなかったマニアックな挙動があります。それは、Podに複数のコンテナがあり、いずれかまたはすべてのコンテナでpostStart Lifecycle Hookを使っている場合です。このエントリーではそのようなPodが起動するとき、どのような動作になるかを書きます。\n📘【note】 これはKubernetes Advent Calendar 2023の20日目の記事です。\nお題のPod 本記事では、以下のマニフェストのような複数のコンテナ(container1, container2)を含むPodを使って実験します。ちょっと長いですが、やっていることは以下のような感じです。\ncontainer1はメインの処理、postStartフック、Readines Probe、Liveness Probeで、それぞれ1秒おきに /var/log/startup-sequence-test/message にログを出力する container2はメインの処理で、1秒おきに、上と同じファイルにログを出力する apiVersion: v1 kind: Pod metadata: name: startup-sequence-test namespace: default spec: containers: - name: container1 image: busybox:latest args: - /bin/sh - -c - | for i in $(seq 60); do echo \"$(date): container1 / main\" \u003e\u003e /var/log/startup-sequence-test/message sleep 1 done tail -f /dev/null lifecycle: postStart: exec: command: - \"/bin/sh\" - \"-c\" - | for i in $(seq 30); do echo \"$(date): container1 / post start hook\" \u003e\u003e /var/log/startup-sequence-test/message sleep 1 done readinessProbe: exec: command: - \"/bin/sh\" - \"-c\" - | echo \"$(date): container1 / readiness probe\" \u003e\u003e /var/log/startup-sequence-test/message livenessProbe: exec: command: - \"/bin/sh\" - \"-c\" - | echo \"$(date): container1 / liveness probe\" \u003e\u003e /var/log/startup-sequence-test/message volumeMounts: - mountPath: /var/log/startup-sequence-test name: log-volume - name: container2 image: busybox:latest args: - /bin/sh - -c - | for i in $(seq 60); do echo \"$(date): container2 / main\" \u003e\u003e /var/log/startup-sequence-test/message sleep 1 done tail -f /dev/null volumeMounts: - mountPath: /var/log/startup-sequence-test name: log-volume volumes: - name: log-volume emptyDir: {} このPodをクラスタに適用した後、/var/log/startup-sequence-test/message に書かれている内容を確認すれば、それぞれの処理がどのような順番で実行されているかが分かるというわけです。\n期待する挙動 実験してみる前にどのような動作になるか予想してみましょう。おおよそ以下のような感じになるでしょうか…？\ncontainer1、container2のメインの処理が開始される（Pod内のコンテナの起動順序には依存関係はなさそうに思える） container1のメインの処理が開始された直後に、postStartフックが開始される が終了するとReadiness Probe、Liveness Probeが開始される この予想を図にすると以下のようになります。2つのコンテナが同時に起動を始めるような形です。\n実験してみた それでは、実際にクラスタに適用して起動するまでの様子を見てみましょー。\n$ kubectl apply -f startup-sequence-test.yaml \u0026\u0026 kubectl get pod startup-sequence-test -w pod/startup-sequence-test created NAME READY STATUS RESTARTS AGE startup-sequence-test 0/2 ContainerCreating 0 0s startup-sequence-test 1/2 Running 0 37s \u003c-- 2つのコンテナうちの片方がREADYに startup-sequence-test 2/2 Running 0 37s \u003c-- 残りのコンテナがREADYに 上のkubectl get podの結果を見ると、既に予想に反していそうな雰囲気があります。それは、2つのコンテナのどちらも、READYになるまでに37sかかっていることです。postStartフックやProbeを設定していないcontainer2については、コンテナが起動すればすぐにREADYになるはずですが…。\n次にログの出力結果を見てみましょう。\n$ kubectl exec startup-sequence-test -- cat /var/log/startup-sequence-test/message Defaulted container \"container1\" out of: container1, container2 Thu Dec 21 10:40:51 UTC 2023: container1 / main Thu Dec 21 10:40:51 UTC 2023: container1 / post start hook Thu Dec 21 10:40:52 UTC 2023: container1 / main Thu Dec 21 10:40:52 UTC 2023: container1 / post start hook Thu Dec 21 10:40:53 UTC 2023: container1 / main Thu Dec 21 10:40:53 UTC 2023: container1 / post start hook ...(約30秒)... Thu Dec 21 10:41:21 UTC 2023: container1 / main Thu Dec 21 10:41:22 UTC 2023: container1 / main Thu Dec 21 10:41:23 UTC 2023: container2 / main Thu Dec 21 10:41:23 UTC 2023: container1 / main Thu Dec 21 10:41:23 UTC 2023: container1 / readiness probe Thu Dec 21 10:41:23 UTC 2023: container1 / liveness probe Thu Dec 21 10:41:23 UTC 2023: container1 / readiness probe Thu Dec 21 10:41:24 UTC 2023: container2 / main Thu Dec 21 10:41:24 UTC 2023: container1 / main Thu Dec 21 10:41:24 UTC 2023: container1 / liveness probe Thu Dec 21 10:41:24 UTC 2023: container1 / readiness probe ... というわけで、container1とcontainer2のメイン処理はほぼ同時に開始されるという予想でしたが、どうやらcontainer1のpostStartフックが終了するまでcontainer2は開始されないようです。前述の予想の1.が外れた結果となりました。\nこの結果から、container2の動作の開始はcontainer1のpostStartフックの終了に依存していることになりますが、ではこの依存関係はどうやって決まっているのでしょうか。すぐに思いつくのは、Podリソースでコンテナを記述する順序です。\n実験2 Podリソースにおけるコンテナの順序と、起動時の依存関係を確かめるために、container1とcontainer2の記述順序を逆にして実験をしてみます。マニフェストファイルは以下のとおりです。\napiVersion: v1 kind: Pod metadata: name: startup-sequence-test namespace: default spec: containers: - name: container2 # ... 順番を入れ替えただけで内容は同じ - name: container1 # ... 順番を入れ替えただけで内容は同じ volumes: - name: log-volume emptyDir: {} 同じようにクラスタに適用して、kubectl getとログの内容を確認してみます。\n$ kubectl apply -f startup-sequence-test-2.yaml \u0026\u0026 kubectl get pod startup-sequence-test -w pod/startup-sequence-test created NAME READY STATUS RESTARTS AGE startup-sequence-test 0/2 ContainerCreating 0 0s startup-sequence-test 1/2 Running 0 35s \u003c-- 2つのコンテナうちの片方がREADYに startup-sequence-test 2/2 Running 0 35s \u003c-- 残りのコンテナがREADYに $ kubectl exec startup-sequence-test -- cat /var/log/startup-sequence-test/message Defaulted container \"container2\" out of: container2, container1 Thu Dec 21 12:17:07 UTC 2023: container2 / main Thu Dec 21 12:17:08 UTC 2023: container2 / main Thu Dec 21 12:17:08 UTC 2023: container1 / main Thu Dec 21 12:17:08 UTC 2023: container1 / post start hook Thu Dec 21 12:17:09 UTC 2023: container2 / main Thu Dec 21 12:17:09 UTC 2023: container1 / main Thu Dec 21 12:17:09 UTC 2023: container1 / post start hook Thu Dec 21 12:17:10 UTC 2023: container2 / main Thu Dec 21 12:17:10 UTC 2023: container1 / main Thu Dec 21 12:17:10 UTC 2023: container1 / post start hook ...(約30秒)... Thu Dec 21 12:17:38 UTC 2023: container2 / main Thu Dec 21 12:17:38 UTC 2023: container1 / main Thu Dec 21 12:17:39 UTC 2023: container2 / main Thu Dec 21 12:17:39 UTC 2023: container1 / readiness probe Thu Dec 21 12:17:39 UTC 2023: container1 / main Thu Dec 21 12:17:40 UTC 2023: container2 / main Thu Dec 21 12:17:40 UTC 2023: container1 / readiness probe Thu Dec 21 12:17:40 UTC 2023: container1 / liveness probe Thu Dec 21 12:17:40 UTC 2023: container1 / main Thu Dec 21 12:17:41 UTC 2023: container2 / main Thu Dec 21 12:17:41 UTC 2023: container1 / readiness probe Thu Dec 21 12:17:41 UTC 2023: container1 / liveness probe ... コンテナがREADYになるタイミングは、最初の実験と同様container1のpostStartフックが終了してからのようです。ただし、ログを見る限りcontainer2の処理はすぐに開始されており、続いてcontainer1のメインの処理とpostStartフックが始まっています。こちらの場合は、container2がcontainer1のpostStartフックを待っている様子はありません。\nというわけで、Podに複数のコンテナがある場合の起動順序は、以下のようになるものと考えられます。\nマニフェストに記述した順にコンテナの起動が行われる postStartフックが設定されている場合、その処理が終了してから次のコンテナの起動が開始される 図に表すと、以下のような感じです。\n実装を見てみる 実験の結果からは上述のような起動順序であると考えられますが、実際にそうなっているのかコードでも確認してみましょう。Podの起動を担っているのはkubeletというコンポーネントなので、kubeletのコードから該当箇所を探って行きます。\nまず、コンテナの起動を指示する start() という処理を呼び出しているのがこちら。\nhttps://github.com/kubernetes/kubernetes/blob/v1.28.5/pkg/kubelet/kuberuntime/kuberuntime_manager.go#L1315-L1317 for _, idx := range podContainerChanges.ContainersToStart { start(ctx, \"container\", metrics.Container, containerStartSpec(\u0026pod.Spec.Containers[idx])) } Podに記述された複数のコンテナでループして、直列にstart()を呼び出していることが分かります。\n次に、start()の中身がこちら。\nhttps://github.com/kubernetes/kubernetes/blob/v1.28.5/pkg/kubelet/kuberuntime/kuberuntime_manager.go#L1230-L1267 start := func(ctx context.Context, typeName, metricLabel string, spec *startSpec) error { # ...(snip)... if msg, err := m.startContainer(ctx, podSandboxID, podSandboxConfig, spec, pod, podStatus, pullSecrets, podIP, podIPs); err != nil { # ...(snip)... return err } return nil } start()から、さらにm.startContainer()を呼び出します。\nm.startContainer() の内部の処理は以下のようになっています。\nhttps://github.com/kubernetes/kubernetes/blob/v1.28.5/pkg/kubelet/kuberuntime/kuberuntime_container.go#L252-L297 func (m *kubeGenericRuntimeManager) startContainer(ctx context.Context, podSandboxID string, podSandboxConfig *runtimeapi.PodSandboxConfig, spec *startSpec, pod *v1.Pod, podStatus *kubecontainer.PodStatus, pullSecrets []v1.Secret, podIP string, podIPs []string) (string, error) { container := spec.container // Step 1: pull the image. ...(snip)... // Step 2: create the container. // For a new container, the RestartCount should be 0 ...(snip)... // Step 3: start the container. err = m.runtimeService.StartContainer(ctx, containerID) ...(snip)... // Step 4: execute the post start hook. if container.Lifecycle != nil \u0026\u0026 container.Lifecycle.PostStart != nil { kubeContainerID := kubecontainer.ContainerID{ Type: m.runtimeName, ID: containerID, } msg, handlerErr := m.runner.Run(ctx, kubeContainerID, pod, container, container.Lifecycle.PostStart) if handlerErr != nil { klog.ErrorS(handlerErr, \"Failed to execute PostStartHook\", \"pod\", klog.KObj(pod), \"podUID\", pod.UID, \"containerName\", container.Name, \"containerID\", kubeContainerID.String()) // do not record the message in the event so that secrets won't leak from the server. m.recordContainerEvent(pod, container, kubeContainerID.ID, v1.EventTypeWarning, events.FailedPostStartHook, \"PostStartHook failed\") if err := m.killContainer(ctx, pod, kubeContainerID, container.Name, \"FailedPostStartHook\", reasonFailedPostStartHook, nil, nil); err != nil { klog.ErrorS(err, \"Failed to kill container\", \"pod\", klog.KObj(pod), \"podUID\", pod.UID, \"containerName\", container.Name, \"containerID\", kubeContainerID.String()) } return msg, ErrPostStartHook } } return \"\", nil } Step 4と示されている箇所でpostStartフックを実行し、処理結果が返ってくるまで待機しているように見えます。postStartフックの処理が非同期なものならすぐにStep 4を抜けて後続の処理に進みそうですが、そうでなければここで待ちになるのではないでしょうか。すると、最初に示したコードの後続のループ処理、つまり次のコンテナの起動処理に進みません。 これが、postStartフックが終了してからコンテナの起動が始まるという動作につながっているようです。\nまとめ というわけで、Podに複数のコンテナを記述していてpostStartフックを使用している場合は、起動順序に注意しましょう！\n🙏【謝辞】 本エントリーは、業務の中で社内のKubernetesユーザーからいただいた質問と、それに対するチームメンバーの調査が元ネタになっています。 この場を借りて、深く感謝申し上げます。\n以上です。 最後まで読んでいただきありがとうございました。メリークリスマス！\n","wordCount":"958","inLanguage":"ja","datePublished":"2023-12-21T00:00:00Z","dateModified":"2023-12-21T00:00:00Z","author":{"@type":"Person","name":"hhiroshell"},"mainEntityOfPage":{"@type":"WebPage","@id":"https://alpaca-lab.blog/ja/posts/kubernetes-startup-sequence-of-pods/"},"publisher":{"@type":"Organization","name":"alpaca-lab.blog","logo":{"@type":"ImageObject","url":"https://alpaca-lab.blog/favicon.ico"}}}</script></head><body id=top><header class=header><nav class=nav><div class=logo><a href=https://alpaca-lab.blog/ja/ accesskey=h title="alpaca-lab.blog (Alt + H)">alpaca-lab.blog</a><div class=logo-switches><button id=theme-toggle accesskey=t title="(Alt + T)" aria-label="Toggle theme">
+<svg id="moon" width="24" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+<svg id="sun" width="24" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg></button><ul class=lang-switch><li>|</li><li><a href=https://alpaca-lab.blog/en/ title=English aria-label=English>En</a></li></ul></div></div><ul id=menu><li><a href=https://alpaca-lab.blog/ja/posts/ title=記事><span>記事</span></a></li><li><a href=https://alpaca-lab.blog/ja/tags/ title=タグ><span>タグ</span></a></li></ul></nav></header><main class=main><article class=post-single><header class=post-header><div class=breadcrumbs><a href=https://alpaca-lab.blog/ja/>ホーム</a>&nbsp;»&nbsp;<a href=https://alpaca-lab.blog/ja/posts/>Posts</a></div><h1 class="post-title entry-hint-parent">Pod内に複数のコンテナがある場合の起動シーケンス</h1><div class=post-meta><span title='2023-12-21 00:00:00 +0000 UTC'>2023年12月21日</span>&nbsp;·&nbsp;<span>5 分</span>&nbsp;·&nbsp;<span>hhiroshell</span>&nbsp;|&nbsp;<span>言語:</span><ul class=i18n_list><li><a href=https://alpaca-lab.blog/en/posts/kubernetes-startup-sequence-of-pods/>En</a></li></ul></div></header><div class=post-content><h2 id=これはなに>これはなに<a hidden class=anchor aria-hidden=true href=#これはなに>#</a></h2><p>「Kubernetesマイクロサービス開発の実践」というKubernetes本を執筆しまして、めでたく先日発売となりました！ぜひ買ってくださいー。</p><ul><li>「<a href=https://www.amazon.co.jp/dp/4295018147/>Kubernetesマイクロサービス開発の実践</a>」</li></ul><p>この書籍の第7章には、PodオブジェクトがAPI Serverに作成されてから実際にPodが起動するまでの処理を解説した箇所があるのですが、諸事情のため書籍では載せられなかったマニアックな挙動があります。それは、Podに複数のコンテナがあり、いずれかまたはすべてのコンテナでpostStart Lifecycle Hookを使っている場合です。このエントリーではそのようなPodが起動するとき、どのような動作になるかを書きます。</p><blockquote><p>📘【note】
+これは<a href=https://qiita.com/advent-calendar/2023/kubernetes>Kubernetes Advent Calendar 2023</a>の20日目の記事です。</p></blockquote><h2 id=お題のpod>お題のPod<a hidden class=anchor aria-hidden=true href=#お題のpod>#</a></h2><p>本記事では、以下のマニフェストのような複数のコンテナ(container1, container2)を含むPodを使って実験します。ちょっと長いですが、やっていることは以下のような感じです。</p><ul><li>container1はメインの処理、postStartフック、Readines Probe、Liveness Probeで、それぞれ1秒おきに <code>/var/log/startup-sequence-test/message</code> にログを出力する</li><li>container2はメインの処理で、1秒おきに、上と同じファイルにログを出力する</li></ul><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none><code class=language-yaml data-lang=yaml><span style=display:flex><span><span style=color:#f92672>apiVersion</span>: <span style=color:#ae81ff>v1</span>
+</span></span><span style=display:flex><span><span style=color:#f92672>kind</span>: <span style=color:#ae81ff>Pod</span>
+</span></span><span style=display:flex><span><span style=color:#f92672>metadata</span>:
+</span></span><span style=display:flex><span>  <span style=color:#f92672>name</span>: <span style=color:#ae81ff>startup-sequence-test</span>
+</span></span><span style=display:flex><span>  <span style=color:#f92672>namespace</span>: <span style=color:#ae81ff>default</span>
+</span></span><span style=display:flex><span><span style=color:#f92672>spec</span>:
+</span></span><span style=display:flex><span>  <span style=color:#f92672>containers</span>:
+</span></span><span style=display:flex><span>  - <span style=color:#f92672>name</span>: <span style=color:#ae81ff>container1</span>
+</span></span><span style=display:flex><span>    <span style=color:#f92672>image</span>: <span style=color:#ae81ff>busybox:latest</span>
+</span></span><span style=display:flex><span>    <span style=color:#f92672>args</span>:
+</span></span><span style=display:flex><span>    - <span style=color:#ae81ff>/bin/sh</span>
+</span></span><span style=display:flex><span>    - -<span style=color:#ae81ff>c</span>
+</span></span><span style=display:flex><span>    - |<span style=color:#e6db74>
+</span></span></span><span style=display:flex><span><span style=color:#e6db74>      for i in $(seq 60); do
+</span></span></span><span style=display:flex><span><span style=color:#e6db74>        echo &#34;$(date): container1 / main&#34; &gt;&gt; /var/log/startup-sequence-test/message
+</span></span></span><span style=display:flex><span><span style=color:#e6db74>        sleep 1
+</span></span></span><span style=display:flex><span><span style=color:#e6db74>      done
+</span></span></span><span style=display:flex><span><span style=color:#e6db74>      tail -f /dev/null</span>
+</span></span><span style=display:flex><span>    <span style=color:#f92672>lifecycle</span>:
+</span></span><span style=display:flex><span>      <span style=color:#f92672>postStart</span>:
+</span></span><span style=display:flex><span>        <span style=color:#f92672>exec</span>:
+</span></span><span style=display:flex><span>          <span style=color:#f92672>command</span>:
+</span></span><span style=display:flex><span>          - <span style=color:#e6db74>&#34;/bin/sh&#34;</span>
+</span></span><span style=display:flex><span>          - <span style=color:#e6db74>&#34;-c&#34;</span>
+</span></span><span style=display:flex><span>          - |<span style=color:#e6db74>
+</span></span></span><span style=display:flex><span><span style=color:#e6db74>            for i in $(seq 30); do
+</span></span></span><span style=display:flex><span><span style=color:#e6db74>              echo &#34;$(date): container1 / post start hook&#34; &gt;&gt; /var/log/startup-sequence-test/message
+</span></span></span><span style=display:flex><span><span style=color:#e6db74>              sleep 1
+</span></span></span><span style=display:flex><span><span style=color:#e6db74>            done</span>
+</span></span><span style=display:flex><span>    <span style=color:#f92672>readinessProbe</span>:
+</span></span><span style=display:flex><span>      <span style=color:#f92672>exec</span>:
+</span></span><span style=display:flex><span>        <span style=color:#f92672>command</span>:
+</span></span><span style=display:flex><span>        - <span style=color:#e6db74>&#34;/bin/sh&#34;</span>
+</span></span><span style=display:flex><span>        - <span style=color:#e6db74>&#34;-c&#34;</span>
+</span></span><span style=display:flex><span>        - |<span style=color:#e6db74>
+</span></span></span><span style=display:flex><span><span style=color:#e6db74>          echo &#34;$(date): container1 / readiness probe&#34; &gt;&gt; /var/log/startup-sequence-test/message</span>
+</span></span><span style=display:flex><span>    <span style=color:#f92672>livenessProbe</span>:
+</span></span><span style=display:flex><span>      <span style=color:#f92672>exec</span>:
+</span></span><span style=display:flex><span>        <span style=color:#f92672>command</span>:
+</span></span><span style=display:flex><span>        - <span style=color:#e6db74>&#34;/bin/sh&#34;</span>
+</span></span><span style=display:flex><span>        - <span style=color:#e6db74>&#34;-c&#34;</span>
+</span></span><span style=display:flex><span>        - |<span style=color:#e6db74>
+</span></span></span><span style=display:flex><span><span style=color:#e6db74>          echo &#34;$(date): container1 / liveness probe&#34; &gt;&gt; /var/log/startup-sequence-test/message</span>
+</span></span><span style=display:flex><span>    <span style=color:#f92672>volumeMounts</span>:
+</span></span><span style=display:flex><span>    - <span style=color:#f92672>mountPath</span>: <span style=color:#ae81ff>/var/log/startup-sequence-test</span>
+</span></span><span style=display:flex><span>      <span style=color:#f92672>name</span>: <span style=color:#ae81ff>log-volume</span>
+</span></span><span style=display:flex><span>  - <span style=color:#f92672>name</span>: <span style=color:#ae81ff>container2</span>
+</span></span><span style=display:flex><span>    <span style=color:#f92672>image</span>: <span style=color:#ae81ff>busybox:latest</span>
+</span></span><span style=display:flex><span>    <span style=color:#f92672>args</span>:
+</span></span><span style=display:flex><span>    - <span style=color:#ae81ff>/bin/sh</span>
+</span></span><span style=display:flex><span>    - -<span style=color:#ae81ff>c</span>
+</span></span><span style=display:flex><span>    - |<span style=color:#e6db74>
+</span></span></span><span style=display:flex><span><span style=color:#e6db74>      for i in $(seq 60); do
+</span></span></span><span style=display:flex><span><span style=color:#e6db74>        echo &#34;$(date): container2 / main&#34; &gt;&gt; /var/log/startup-sequence-test/message
+</span></span></span><span style=display:flex><span><span style=color:#e6db74>        sleep 1
+</span></span></span><span style=display:flex><span><span style=color:#e6db74>      done
+</span></span></span><span style=display:flex><span><span style=color:#e6db74>      tail -f /dev/null</span>
+</span></span><span style=display:flex><span>    <span style=color:#f92672>volumeMounts</span>:
+</span></span><span style=display:flex><span>    - <span style=color:#f92672>mountPath</span>: <span style=color:#ae81ff>/var/log/startup-sequence-test</span>
+</span></span><span style=display:flex><span>      <span style=color:#f92672>name</span>: <span style=color:#ae81ff>log-volume</span>
+</span></span><span style=display:flex><span>  <span style=color:#f92672>volumes</span>:
+</span></span><span style=display:flex><span>  - <span style=color:#f92672>name</span>: <span style=color:#ae81ff>log-volume</span>
+</span></span><span style=display:flex><span>    <span style=color:#f92672>emptyDir</span>: {}
+</span></span></code></pre></div><p>このPodをクラスタに適用した後、<code>/var/log/startup-sequence-test/message</code> に書かれている内容を確認すれば、それぞれの処理がどのような順番で実行されているかが分かるというわけです。</p><h2 id=期待する挙動>期待する挙動<a hidden class=anchor aria-hidden=true href=#期待する挙動>#</a></h2><p>実験してみる前にどのような動作になるか予想してみましょう。おおよそ以下のような感じになるでしょうか&mldr;？</p><ol><li>container1、container2のメインの処理が開始される（Pod内のコンテナの起動順序には依存関係はなさそうに思える）</li><li>container1のメインの処理が開始された直後に、postStartフックが開始される</li><li><ol start=2><li>が終了するとReadiness Probe、Liveness Probeが開始される</li></ol></li></ol><p>この予想を図にすると以下のようになります。2つのコンテナが同時に起動を始めるような形です。</p><p><img alt=pod-startup-sequence-1 loading=lazy src=https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/pod-startup-sequence-1.png></p><h2 id=実験してみた>実験してみた<a hidden class=anchor aria-hidden=true href=#実験してみた>#</a></h2><p>それでは、実際にクラスタに適用して起動するまでの様子を見てみましょー。</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none><code class=language-console data-lang=console><span style=display:flex><span>$ kubectl apply -f startup-sequence-test.yaml <span style=color:#f92672>&amp;&amp;</span> kubectl get pod startup-sequence-test -w
+</span></span><span style=display:flex><span>pod/startup-sequence-test created
+</span></span><span style=display:flex><span>NAME                    READY   STATUS              RESTARTS   AGE
+</span></span><span style=display:flex><span>startup-sequence-test   0/2     ContainerCreating   0          0s
+</span></span><span style=display:flex><span>startup-sequence-test   1/2     Running             0          37s  &lt;-- 2つのコンテナうちの片方がREADYに
+</span></span><span style=display:flex><span>startup-sequence-test   2/2     Running             0          37s  &lt;-- 残りのコンテナがREADYに
+</span></span></code></pre></div><p>上の<code>kubectl get pod</code>の結果を見ると、既に予想に反していそうな雰囲気があります。それは、2つのコンテナのどちらも、READYになるまでに37sかかっていることです。postStartフックやProbeを設定していないcontainer2については、コンテナが起動すればすぐにREADYになるはずですが…。</p><p>次にログの出力結果を見てみましょう。</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none><code class=language-console data-lang=console><span style=display:flex><span>$ kubectl exec startup-sequence-test -- cat /var/log/startup-sequence-test/message
+</span></span><span style=display:flex><span>Defaulted container &#34;container1&#34; out of: container1, container2
+</span></span><span style=display:flex><span>Thu Dec 21 10:40:51 UTC 2023: container1 / main
+</span></span><span style=display:flex><span>Thu Dec 21 10:40:51 UTC 2023: container1 / post start hook
+</span></span><span style=display:flex><span>Thu Dec 21 10:40:52 UTC 2023: container1 / main
+</span></span><span style=display:flex><span>Thu Dec 21 10:40:52 UTC 2023: container1 / post start hook
+</span></span><span style=display:flex><span>Thu Dec 21 10:40:53 UTC 2023: container1 / main
+</span></span><span style=display:flex><span>Thu Dec 21 10:40:53 UTC 2023: container1 / post start hook
+</span></span><span style=display:flex><span>...(約30秒)...
+</span></span><span style=display:flex><span>Thu Dec 21 10:41:21 UTC 2023: container1 / main
+</span></span><span style=display:flex><span>Thu Dec 21 10:41:22 UTC 2023: container1 / main
+</span></span><span style=display:flex><span>Thu Dec 21 10:41:23 UTC 2023: container2 / main
+</span></span><span style=display:flex><span>Thu Dec 21 10:41:23 UTC 2023: container1 / main
+</span></span><span style=display:flex><span>Thu Dec 21 10:41:23 UTC 2023: container1 / readiness probe
+</span></span><span style=display:flex><span>Thu Dec 21 10:41:23 UTC 2023: container1 / liveness probe
+</span></span><span style=display:flex><span>Thu Dec 21 10:41:23 UTC 2023: container1 / readiness probe
+</span></span><span style=display:flex><span>Thu Dec 21 10:41:24 UTC 2023: container2 / main
+</span></span><span style=display:flex><span>Thu Dec 21 10:41:24 UTC 2023: container1 / main
+</span></span><span style=display:flex><span>Thu Dec 21 10:41:24 UTC 2023: container1 / liveness probe
+</span></span><span style=display:flex><span>Thu Dec 21 10:41:24 UTC 2023: container1 / readiness probe
+</span></span><span style=display:flex><span>...
+</span></span></code></pre></div><p>というわけで、container1とcontainer2のメイン処理はほぼ同時に開始されるという予想でしたが、どうやらcontainer1のpostStartフックが終了するまでcontainer2は開始されないようです。前述の予想の1.が外れた結果となりました。</p><p>この結果から、container2の動作の開始はcontainer1のpostStartフックの終了に依存していることになりますが、ではこの依存関係はどうやって決まっているのでしょうか。すぐに思いつくのは、Podリソースでコンテナを記述する順序です。</p><h2 id=実験2>実験2<a hidden class=anchor aria-hidden=true href=#実験2>#</a></h2><p>Podリソースにおけるコンテナの順序と、起動時の依存関係を確かめるために、container1とcontainer2の記述順序を逆にして実験をしてみます。マニフェストファイルは以下のとおりです。</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none><code class=language-yaml data-lang=yaml><span style=display:flex><span><span style=color:#f92672>apiVersion</span>: <span style=color:#ae81ff>v1</span>
+</span></span><span style=display:flex><span><span style=color:#f92672>kind</span>: <span style=color:#ae81ff>Pod</span>
+</span></span><span style=display:flex><span><span style=color:#f92672>metadata</span>:
+</span></span><span style=display:flex><span>  <span style=color:#f92672>name</span>: <span style=color:#ae81ff>startup-sequence-test</span>
+</span></span><span style=display:flex><span>  <span style=color:#f92672>namespace</span>: <span style=color:#ae81ff>default</span>
+</span></span><span style=display:flex><span><span style=color:#f92672>spec</span>:
+</span></span><span style=display:flex><span>  <span style=color:#f92672>containers</span>:
+</span></span><span style=display:flex><span>  - <span style=color:#f92672>name</span>: <span style=color:#ae81ff>container2</span>
+</span></span><span style=display:flex><span>    <span style=color:#75715e># ... 順番を入れ替えただけで内容は同じ</span>
+</span></span><span style=display:flex><span>  - <span style=color:#f92672>name</span>: <span style=color:#ae81ff>container1</span>
+</span></span><span style=display:flex><span>    <span style=color:#75715e># ... 順番を入れ替えただけで内容は同じ</span>
+</span></span><span style=display:flex><span>  <span style=color:#f92672>volumes</span>:
+</span></span><span style=display:flex><span>  - <span style=color:#f92672>name</span>: <span style=color:#ae81ff>log-volume</span>
+</span></span><span style=display:flex><span>    <span style=color:#f92672>emptyDir</span>: {}
+</span></span></code></pre></div><p>同じようにクラスタに適用して、<code>kubectl get</code>とログの内容を確認してみます。</p><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none><code class=language-console data-lang=console><span style=display:flex><span>$ kubectl apply -f startup-sequence-test-2.yaml <span style=color:#f92672>&amp;&amp;</span> kubectl get pod startup-sequence-test -w
+</span></span><span style=display:flex><span>pod/startup-sequence-test created
+</span></span><span style=display:flex><span>NAME                    READY   STATUS              RESTARTS   AGE
+</span></span><span style=display:flex><span>startup-sequence-test   0/2     ContainerCreating   0          0s
+</span></span><span style=display:flex><span>startup-sequence-test   1/2     Running             0          35s  &lt;-- 2つのコンテナうちの片方がREADYに
+</span></span><span style=display:flex><span>startup-sequence-test   2/2     Running             0          35s  &lt;-- 残りのコンテナがREADYに
+</span></span><span style=display:flex><span><span style=color:#960050;background-color:#1e0010>
+</span></span></span><span style=display:flex><span>$ kubectl exec startup-sequence-test -- cat /var/log/startup-sequence-test/message
+</span></span><span style=display:flex><span>Defaulted container &#34;container2&#34; out of: container2, container1
+</span></span><span style=display:flex><span>Thu Dec 21 12:17:07 UTC 2023: container2 / main
+</span></span><span style=display:flex><span>Thu Dec 21 12:17:08 UTC 2023: container2 / main
+</span></span><span style=display:flex><span>Thu Dec 21 12:17:08 UTC 2023: container1 / main
+</span></span><span style=display:flex><span>Thu Dec 21 12:17:08 UTC 2023: container1 / post start hook
+</span></span><span style=display:flex><span>Thu Dec 21 12:17:09 UTC 2023: container2 / main
+</span></span><span style=display:flex><span>Thu Dec 21 12:17:09 UTC 2023: container1 / main
+</span></span><span style=display:flex><span>Thu Dec 21 12:17:09 UTC 2023: container1 / post start hook
+</span></span><span style=display:flex><span>Thu Dec 21 12:17:10 UTC 2023: container2 / main
+</span></span><span style=display:flex><span>Thu Dec 21 12:17:10 UTC 2023: container1 / main
+</span></span><span style=display:flex><span>Thu Dec 21 12:17:10 UTC 2023: container1 / post start hook
+</span></span><span style=display:flex><span>...(約30秒)...
+</span></span><span style=display:flex><span>Thu Dec 21 12:17:38 UTC 2023: container2 / main
+</span></span><span style=display:flex><span>Thu Dec 21 12:17:38 UTC 2023: container1 / main
+</span></span><span style=display:flex><span>Thu Dec 21 12:17:39 UTC 2023: container2 / main
+</span></span><span style=display:flex><span>Thu Dec 21 12:17:39 UTC 2023: container1 / readiness probe
+</span></span><span style=display:flex><span>Thu Dec 21 12:17:39 UTC 2023: container1 / main
+</span></span><span style=display:flex><span>Thu Dec 21 12:17:40 UTC 2023: container2 / main
+</span></span><span style=display:flex><span>Thu Dec 21 12:17:40 UTC 2023: container1 / readiness probe
+</span></span><span style=display:flex><span>Thu Dec 21 12:17:40 UTC 2023: container1 / liveness probe
+</span></span><span style=display:flex><span>Thu Dec 21 12:17:40 UTC 2023: container1 / main
+</span></span><span style=display:flex><span>Thu Dec 21 12:17:41 UTC 2023: container2 / main
+</span></span><span style=display:flex><span>Thu Dec 21 12:17:41 UTC 2023: container1 / readiness probe
+</span></span><span style=display:flex><span>Thu Dec 21 12:17:41 UTC 2023: container1 / liveness probe
+</span></span><span style=display:flex><span>...
+</span></span></code></pre></div><p>コンテナがREADYになるタイミングは、最初の実験と同様container1のpostStartフックが終了してからのようです。ただし、ログを見る限りcontainer2の処理はすぐに開始されており、続いてcontainer1のメインの処理とpostStartフックが始まっています。こちらの場合は、container2がcontainer1のpostStartフックを待っている様子はありません。</p><p>というわけで、Podに複数のコンテナがある場合の起動順序は、以下のようになるものと考えられます。</p><ul><li>マニフェストに記述した順にコンテナの起動が行われる</li><li>postStartフックが設定されている場合、その処理が終了してから次のコンテナの起動が開始される</li></ul><p>図に表すと、以下のような感じです。</p><p><img alt=pod-startup-sequence-2 loading=lazy src=https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/pod-startup-sequence-2.png></p><h2 id=実装を見てみる>実装を見てみる<a hidden class=anchor aria-hidden=true href=#実装を見てみる>#</a></h2><p>実験の結果からは上述のような起動順序であると考えられますが、実際にそうなっているのかコードでも確認してみましょう。Podの起動を担っているのはkubeletというコンポーネントなので、kubeletのコードから該当箇所を探って行きます。</p><p>まず、コンテナの起動を指示する <code>start()</code> という処理を呼び出しているのがこちら。</p><ul><li><a href=https://github.com/kubernetes/kubernetes/blob/v1.28.5/pkg/kubelet/kuberuntime/kuberuntime_manager.go#L1315-L1317>https://github.com/kubernetes/kubernetes/blob/v1.28.5/pkg/kubelet/kuberuntime/kuberuntime_manager.go#L1315-L1317</a></li></ul><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none><code class=language-go data-lang=go><span style=display:flex><span>	<span style=color:#66d9ef>for</span> <span style=color:#a6e22e>_</span>, <span style=color:#a6e22e>idx</span> <span style=color:#f92672>:=</span> <span style=color:#66d9ef>range</span> <span style=color:#a6e22e>podContainerChanges</span>.<span style=color:#a6e22e>ContainersToStart</span> {
+</span></span><span style=display:flex><span>		<span style=color:#a6e22e>start</span>(<span style=color:#a6e22e>ctx</span>, <span style=color:#e6db74>&#34;container&#34;</span>, <span style=color:#a6e22e>metrics</span>.<span style=color:#a6e22e>Container</span>, <span style=color:#a6e22e>containerStartSpec</span>(<span style=color:#f92672>&amp;</span><span style=color:#a6e22e>pod</span>.<span style=color:#a6e22e>Spec</span>.<span style=color:#a6e22e>Containers</span>[<span style=color:#a6e22e>idx</span>]))
+</span></span><span style=display:flex><span>	}
+</span></span></code></pre></div><p>Podに記述された複数のコンテナでループして、直列に<code>start()</code>を呼び出していることが分かります。</p><p>次に、<code>start()</code>の中身がこちら。</p><ul><li><a href=https://github.com/kubernetes/kubernetes/blob/v1.28.5/pkg/kubelet/kuberuntime/kuberuntime_manager.go#L1230-L1267>https://github.com/kubernetes/kubernetes/blob/v1.28.5/pkg/kubelet/kuberuntime/kuberuntime_manager.go#L1230-L1267</a></li></ul><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none><code class=language-go data-lang=go><span style=display:flex><span>	<span style=color:#a6e22e>start</span> <span style=color:#f92672>:=</span> <span style=color:#66d9ef>func</span>(<span style=color:#a6e22e>ctx</span> <span style=color:#a6e22e>context</span>.<span style=color:#a6e22e>Context</span>, <span style=color:#a6e22e>typeName</span>, <span style=color:#a6e22e>metricLabel</span> <span style=color:#66d9ef>string</span>, <span style=color:#a6e22e>spec</span> <span style=color:#f92672>*</span><span style=color:#a6e22e>startSpec</span>) <span style=color:#66d9ef>error</span> {
+</span></span><span style=display:flex><span>		<span style=color:#960050;background-color:#1e0010>#</span> <span style=color:#f92672>...</span>(<span style=color:#a6e22e>snip</span>)<span style=color:#f92672>...</span>
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>		<span style=color:#66d9ef>if</span> <span style=color:#a6e22e>msg</span>, <span style=color:#a6e22e>err</span> <span style=color:#f92672>:=</span> <span style=color:#a6e22e>m</span>.<span style=color:#a6e22e>startContainer</span>(<span style=color:#a6e22e>ctx</span>, <span style=color:#a6e22e>podSandboxID</span>, <span style=color:#a6e22e>podSandboxConfig</span>, <span style=color:#a6e22e>spec</span>, <span style=color:#a6e22e>pod</span>, <span style=color:#a6e22e>podStatus</span>, <span style=color:#a6e22e>pullSecrets</span>, <span style=color:#a6e22e>podIP</span>, <span style=color:#a6e22e>podIPs</span>); <span style=color:#a6e22e>err</span> <span style=color:#f92672>!=</span> <span style=color:#66d9ef>nil</span> {
+</span></span><span style=display:flex><span>			<span style=color:#960050;background-color:#1e0010>#</span> <span style=color:#f92672>...</span>(<span style=color:#a6e22e>snip</span>)<span style=color:#f92672>...</span>
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>			<span style=color:#66d9ef>return</span> <span style=color:#a6e22e>err</span>
+</span></span><span style=display:flex><span>		}
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>		<span style=color:#66d9ef>return</span> <span style=color:#66d9ef>nil</span>
+</span></span><span style=display:flex><span>	}
+</span></span></code></pre></div><p><code>start()</code>から、さらに<code>m.startContainer()</code>を呼び出します。</p><p><code>m.startContainer()</code> の内部の処理は以下のようになっています。</p><ul><li><a href=https://github.com/kubernetes/kubernetes/blob/v1.28.5/pkg/kubelet/kuberuntime/kuberuntime_container.go#L252-L297>https://github.com/kubernetes/kubernetes/blob/v1.28.5/pkg/kubelet/kuberuntime/kuberuntime_container.go#L252-L297</a></li></ul><div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none><code class=language-go data-lang=go><span style=display:flex><span><span style=color:#66d9ef>func</span> (<span style=color:#a6e22e>m</span> <span style=color:#f92672>*</span><span style=color:#a6e22e>kubeGenericRuntimeManager</span>) <span style=color:#a6e22e>startContainer</span>(<span style=color:#a6e22e>ctx</span> <span style=color:#a6e22e>context</span>.<span style=color:#a6e22e>Context</span>, <span style=color:#a6e22e>podSandboxID</span> <span style=color:#66d9ef>string</span>, <span style=color:#a6e22e>podSandboxConfig</span> <span style=color:#f92672>*</span><span style=color:#a6e22e>runtimeapi</span>.<span style=color:#a6e22e>PodSandboxConfig</span>, <span style=color:#a6e22e>spec</span> <span style=color:#f92672>*</span><span style=color:#a6e22e>startSpec</span>, <span style=color:#a6e22e>pod</span> <span style=color:#f92672>*</span><span style=color:#a6e22e>v1</span>.<span style=color:#a6e22e>Pod</span>, <span style=color:#a6e22e>podStatus</span> <span style=color:#f92672>*</span><span style=color:#a6e22e>kubecontainer</span>.<span style=color:#a6e22e>PodStatus</span>, <span style=color:#a6e22e>pullSecrets</span> []<span style=color:#a6e22e>v1</span>.<span style=color:#a6e22e>Secret</span>, <span style=color:#a6e22e>podIP</span> <span style=color:#66d9ef>string</span>, <span style=color:#a6e22e>podIPs</span> []<span style=color:#66d9ef>string</span>) (<span style=color:#66d9ef>string</span>, <span style=color:#66d9ef>error</span>) {
+</span></span><span style=display:flex><span>	<span style=color:#a6e22e>container</span> <span style=color:#f92672>:=</span> <span style=color:#a6e22e>spec</span>.<span style=color:#a6e22e>container</span>
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>	<span style=color:#75715e>// Step 1: pull the image.</span>
+</span></span><span style=display:flex><span>	<span style=color:#f92672>...</span>(<span style=color:#a6e22e>snip</span>)<span style=color:#f92672>...</span>
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>	<span style=color:#75715e>// Step 2: create the container.</span>
+</span></span><span style=display:flex><span>	<span style=color:#75715e>// For a new container, the RestartCount should be 0</span>
+</span></span><span style=display:flex><span>	<span style=color:#f92672>...</span>(<span style=color:#a6e22e>snip</span>)<span style=color:#f92672>...</span>
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>	<span style=color:#75715e>// Step 3: start the container.</span>
+</span></span><span style=display:flex><span>	<span style=color:#a6e22e>err</span> = <span style=color:#a6e22e>m</span>.<span style=color:#a6e22e>runtimeService</span>.<span style=color:#a6e22e>StartContainer</span>(<span style=color:#a6e22e>ctx</span>, <span style=color:#a6e22e>containerID</span>)
+</span></span><span style=display:flex><span>	<span style=color:#f92672>...</span>(<span style=color:#a6e22e>snip</span>)<span style=color:#f92672>...</span>
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>	<span style=color:#75715e>// Step 4: execute the post start hook.</span>
+</span></span><span style=display:flex><span>	<span style=color:#66d9ef>if</span> <span style=color:#a6e22e>container</span>.<span style=color:#a6e22e>Lifecycle</span> <span style=color:#f92672>!=</span> <span style=color:#66d9ef>nil</span> <span style=color:#f92672>&amp;&amp;</span> <span style=color:#a6e22e>container</span>.<span style=color:#a6e22e>Lifecycle</span>.<span style=color:#a6e22e>PostStart</span> <span style=color:#f92672>!=</span> <span style=color:#66d9ef>nil</span> {
+</span></span><span style=display:flex><span>		<span style=color:#a6e22e>kubeContainerID</span> <span style=color:#f92672>:=</span> <span style=color:#a6e22e>kubecontainer</span>.<span style=color:#a6e22e>ContainerID</span>{
+</span></span><span style=display:flex><span>			<span style=color:#a6e22e>Type</span>: <span style=color:#a6e22e>m</span>.<span style=color:#a6e22e>runtimeName</span>,
+</span></span><span style=display:flex><span>			<span style=color:#a6e22e>ID</span>:   <span style=color:#a6e22e>containerID</span>,
+</span></span><span style=display:flex><span>		}
+</span></span><span style=display:flex><span>		<span style=color:#a6e22e>msg</span>, <span style=color:#a6e22e>handlerErr</span> <span style=color:#f92672>:=</span> <span style=color:#a6e22e>m</span>.<span style=color:#a6e22e>runner</span>.<span style=color:#a6e22e>Run</span>(<span style=color:#a6e22e>ctx</span>, <span style=color:#a6e22e>kubeContainerID</span>, <span style=color:#a6e22e>pod</span>, <span style=color:#a6e22e>container</span>, <span style=color:#a6e22e>container</span>.<span style=color:#a6e22e>Lifecycle</span>.<span style=color:#a6e22e>PostStart</span>)
+</span></span><span style=display:flex><span>		<span style=color:#66d9ef>if</span> <span style=color:#a6e22e>handlerErr</span> <span style=color:#f92672>!=</span> <span style=color:#66d9ef>nil</span> {
+</span></span><span style=display:flex><span>			<span style=color:#a6e22e>klog</span>.<span style=color:#a6e22e>ErrorS</span>(<span style=color:#a6e22e>handlerErr</span>, <span style=color:#e6db74>&#34;Failed to execute PostStartHook&#34;</span>, <span style=color:#e6db74>&#34;pod&#34;</span>, <span style=color:#a6e22e>klog</span>.<span style=color:#a6e22e>KObj</span>(<span style=color:#a6e22e>pod</span>),
+</span></span><span style=display:flex><span>				<span style=color:#e6db74>&#34;podUID&#34;</span>, <span style=color:#a6e22e>pod</span>.<span style=color:#a6e22e>UID</span>, <span style=color:#e6db74>&#34;containerName&#34;</span>, <span style=color:#a6e22e>container</span>.<span style=color:#a6e22e>Name</span>, <span style=color:#e6db74>&#34;containerID&#34;</span>, <span style=color:#a6e22e>kubeContainerID</span>.<span style=color:#a6e22e>String</span>())
+</span></span><span style=display:flex><span>			<span style=color:#75715e>// do not record the message in the event so that secrets won&#39;t leak from the server.</span>
+</span></span><span style=display:flex><span>			<span style=color:#a6e22e>m</span>.<span style=color:#a6e22e>recordContainerEvent</span>(<span style=color:#a6e22e>pod</span>, <span style=color:#a6e22e>container</span>, <span style=color:#a6e22e>kubeContainerID</span>.<span style=color:#a6e22e>ID</span>, <span style=color:#a6e22e>v1</span>.<span style=color:#a6e22e>EventTypeWarning</span>, <span style=color:#a6e22e>events</span>.<span style=color:#a6e22e>FailedPostStartHook</span>, <span style=color:#e6db74>&#34;PostStartHook failed&#34;</span>)
+</span></span><span style=display:flex><span>			<span style=color:#66d9ef>if</span> <span style=color:#a6e22e>err</span> <span style=color:#f92672>:=</span> <span style=color:#a6e22e>m</span>.<span style=color:#a6e22e>killContainer</span>(<span style=color:#a6e22e>ctx</span>, <span style=color:#a6e22e>pod</span>, <span style=color:#a6e22e>kubeContainerID</span>, <span style=color:#a6e22e>container</span>.<span style=color:#a6e22e>Name</span>, <span style=color:#e6db74>&#34;FailedPostStartHook&#34;</span>, <span style=color:#a6e22e>reasonFailedPostStartHook</span>, <span style=color:#66d9ef>nil</span>, <span style=color:#66d9ef>nil</span>); <span style=color:#a6e22e>err</span> <span style=color:#f92672>!=</span> <span style=color:#66d9ef>nil</span> {
+</span></span><span style=display:flex><span>				<span style=color:#a6e22e>klog</span>.<span style=color:#a6e22e>ErrorS</span>(<span style=color:#a6e22e>err</span>, <span style=color:#e6db74>&#34;Failed to kill container&#34;</span>, <span style=color:#e6db74>&#34;pod&#34;</span>, <span style=color:#a6e22e>klog</span>.<span style=color:#a6e22e>KObj</span>(<span style=color:#a6e22e>pod</span>),
+</span></span><span style=display:flex><span>					<span style=color:#e6db74>&#34;podUID&#34;</span>, <span style=color:#a6e22e>pod</span>.<span style=color:#a6e22e>UID</span>, <span style=color:#e6db74>&#34;containerName&#34;</span>, <span style=color:#a6e22e>container</span>.<span style=color:#a6e22e>Name</span>, <span style=color:#e6db74>&#34;containerID&#34;</span>, <span style=color:#a6e22e>kubeContainerID</span>.<span style=color:#a6e22e>String</span>())
+</span></span><span style=display:flex><span>			}
+</span></span><span style=display:flex><span>			<span style=color:#66d9ef>return</span> <span style=color:#a6e22e>msg</span>, <span style=color:#a6e22e>ErrPostStartHook</span>
+</span></span><span style=display:flex><span>		}
+</span></span><span style=display:flex><span>	}
+</span></span><span style=display:flex><span>
+</span></span><span style=display:flex><span>	<span style=color:#66d9ef>return</span> <span style=color:#e6db74>&#34;&#34;</span>, <span style=color:#66d9ef>nil</span>
+</span></span><span style=display:flex><span>}
+</span></span></code></pre></div><p><code>Step 4</code>と示されている箇所でpostStartフックを実行し、処理結果が返ってくるまで待機しているように見えます。postStartフックの処理が非同期なものならすぐにStep 4を抜けて後続の処理に進みそうですが、そうでなければここで待ちになるのではないでしょうか。すると、最初に示したコードの後続のループ処理、つまり次のコンテナの起動処理に進みません。
+これが、postStartフックが終了してからコンテナの起動が始まるという動作につながっているようです。</p><h2 id=まとめ>まとめ<a hidden class=anchor aria-hidden=true href=#まとめ>#</a></h2><p>というわけで、Podに複数のコンテナを記述していてpostStartフックを使用している場合は、起動順序に注意しましょう！</p><blockquote><p>🙏【謝辞】
+本エントリーは、業務の中で社内のKubernetesユーザーからいただいた質問と、それに対するチームメンバーの調査が元ネタになっています。
+この場を借りて、深く感謝申し上げます。</p></blockquote><p>以上です。
+最後まで読んでいただきありがとうございました。メリークリスマス！</p></div><footer class=post-footer><ul class=post-tags><li><a href=https://alpaca-lab.blog/ja/tags/kubernetes/>Kubernetes</a></li></ul><nav class=paginav><a class=prev href=https://alpaca-lab.blog/ja/posts/hello-world/><span class=title>« 前へ</span><br><span>はじめまして</span>
+</a><a class=next href=https://alpaca-lab.blog/ja/posts/getting-started-with-kubelet-api/><span class=title>次へ »</span><br><span>kubeletのAPIを調べてみた</span></a></nav></footer></article></main><footer class=footer><span>&copy; 2026 <a href=https://alpaca-lab.blog/ja/>alpaca-lab.blog</a></span> ·
+<span>Powered by
+<a href=https://gohugo.io/ rel="noopener noreferrer" target=_blank>Hugo</a> &
+<a href=https://github.com/adityatelange/hugo-PaperMod/ rel=noopener target=_blank>PaperMod</a></span></footer><a href=#top aria-label="go to top" title="Go to Top (Alt + G)" class=top-link id=top-link accesskey=g><svg viewBox="0 0 12 6" fill="currentColor"><path d="M12 6H0l6-6z"/></svg>
+</a><script>let menu=document.getElementById("menu");if(menu){const e=localStorage.getItem("menu-scroll-position");e&&(menu.scrollLeft=parseInt(e,10)),menu.onscroll=function(){localStorage.setItem("menu-scroll-position",menu.scrollLeft)}}document.querySelectorAll('a[href^="#"]').forEach(e=>{e.addEventListener("click",function(e){e.preventDefault();var t=this.getAttribute("href").substr(1);window.matchMedia("(prefers-reduced-motion: reduce)").matches?document.querySelector(`[id='${decodeURIComponent(t)}']`).scrollIntoView():document.querySelector(`[id='${decodeURIComponent(t)}']`).scrollIntoView({behavior:"smooth"}),t==="top"?history.replaceState(null,null," "):history.pushState(null,null,`#${t}`)})})</script><script>var mybutton=document.getElementById("top-link");window.onscroll=function(){document.body.scrollTop>800||document.documentElement.scrollTop>800?(mybutton.style.visibility="visible",mybutton.style.opacity="1"):(mybutton.style.visibility="hidden",mybutton.style.opacity="0")}</script><script>document.getElementById("theme-toggle").addEventListener("click",()=>{const e=document.querySelector("html");e.dataset.theme==="dark"?(e.dataset.theme="light",localStorage.setItem("pref-theme","light")):(e.dataset.theme="dark",localStorage.setItem("pref-theme","dark"))})</script><script>document.querySelectorAll("pre > code").forEach(e=>{const n=e.parentNode.parentNode,t=document.createElement("button");t.classList.add("copy-code"),t.innerHTML="コピー";function s(){t.innerHTML="コピーされました!",setTimeout(()=>{t.innerHTML="コピー"},2e3)}t.addEventListener("click",t=>{if("clipboard"in navigator){navigator.clipboard.writeText(e.textContent),s();return}const n=document.createRange();n.selectNodeContents(e);const o=window.getSelection();o.removeAllRanges(),o.addRange(n);try{document.execCommand("copy"),s()}catch{}o.removeRange(n)}),n.classList.contains("highlight")?n.appendChild(t):n.parentNode.firstChild==n||(e.parentNode.parentNode.parentNode.parentNode.parentNode.nodeName=="TABLE"?e.parentNode.parentNode.parentNode.parentNode.parentNode.appendChild(t):e.parentNode.appendChild(t))})</script></body></html>

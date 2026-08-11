@@ -1,2 +1,355 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>alpaca-lab.blog</title><link>https://alpaca-lab.blog/ja/</link><description>Recent content on alpaca-lab.blog</description><generator>Hugo -- 0.156.0</generator><language>ja</language><lastBuildDate>Sat, 28 Feb 2026 00:00:00 +0000</lastBuildDate><atom:link href="https://alpaca-lab.blog/ja/index.xml" rel="self" type="application/rss+xml"/><item><title>はじめまして</title><link>https://alpaca-lab.blog/ja/posts/hello-world/</link><pubDate>Sat, 28 Feb 2026 00:00:00 +0000</pubDate><guid>https://alpaca-lab.blog/ja/posts/hello-world/</guid><description>&lt;p&gt;alpaca-lab.dev へようこそ。テクノロジーやソフトウェアについて書いていくブログです。&lt;/p&gt;
-&lt;p&gt;これが最初の記事です。これからもよろしくお願いします。&lt;/p&gt;</description></item></channel></rss>
+&lt;p&gt;これが最初の記事です。これからもよろしくお願いします。&lt;/p&gt;</description></item><item><title>Pod内に複数のコンテナがある場合の起動シーケンス</title><link>https://alpaca-lab.blog/ja/posts/kubernetes-startup-sequence-of-pods/</link><pubDate>Thu, 21 Dec 2023 00:00:00 +0000</pubDate><guid>https://alpaca-lab.blog/ja/posts/kubernetes-startup-sequence-of-pods/</guid><description>&lt;h2 id="これはなに"&gt;これはなに&lt;/h2&gt;
+&lt;p&gt;「Kubernetesマイクロサービス開発の実践」というKubernetes本を執筆しまして、めでたく先日発売となりました！ぜひ買ってくださいー。&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;「&lt;a href="https://www.amazon.co.jp/dp/4295018147/"&gt;Kubernetesマイクロサービス開発の実践&lt;/a&gt;」&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;この書籍の第7章には、PodオブジェクトがAPI Serverに作成されてから実際にPodが起動するまでの処理を解説した箇所があるのですが、諸事情のため書籍では載せられなかったマニアックな挙動があります。それは、Podに複数のコンテナがあり、いずれかまたはすべてのコンテナでpostStart Lifecycle Hookを使っている場合です。このエントリーではそのようなPodが起動するとき、どのような動作になるかを書きます。&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;📘【note】
+これは&lt;a href="https://qiita.com/advent-calendar/2023/kubernetes"&gt;Kubernetes Advent Calendar 2023&lt;/a&gt;の20日目の記事です。&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;h2 id="お題のpod"&gt;お題のPod&lt;/h2&gt;
+&lt;p&gt;本記事では、以下のマニフェストのような複数のコンテナ(container1, container2)を含むPodを使って実験します。ちょっと長いですが、やっていることは以下のような感じです。&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;container1はメインの処理、postStartフック、Readines Probe、Liveness Probeで、それぞれ1秒おきに &lt;code&gt;/var/log/startup-sequence-test/message&lt;/code&gt; にログを出力する&lt;/li&gt;
+&lt;li&gt;container2はメインの処理で、1秒おきに、上と同じファイルにログを出力する&lt;/li&gt;
+&lt;/ul&gt;
+&lt;div class="highlight"&gt;&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"&gt;&lt;code class="language-yaml" data-lang="yaml"&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#f92672"&gt;apiVersion&lt;/span&gt;: &lt;span style="color:#ae81ff"&gt;v1&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#f92672"&gt;kind&lt;/span&gt;: &lt;span style="color:#ae81ff"&gt;Pod&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#f92672"&gt;metadata&lt;/span&gt;:
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#f92672"&gt;name&lt;/span&gt;: &lt;span style="color:#ae81ff"&gt;startup-sequence-test&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#f92672"&gt;namespace&lt;/span&gt;: &lt;span style="color:#ae81ff"&gt;default&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#f92672"&gt;spec&lt;/span&gt;:
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#f92672"&gt;containers&lt;/span&gt;:
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; - &lt;span style="color:#f92672"&gt;name&lt;/span&gt;: &lt;span style="color:#ae81ff"&gt;container1&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#f92672"&gt;image&lt;/span&gt;: &lt;span style="color:#ae81ff"&gt;busybox:latest&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#f92672"&gt;args&lt;/span&gt;:
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; - &lt;span style="color:#ae81ff"&gt;/bin/sh&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; - -&lt;span style="color:#ae81ff"&gt;c&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; - |&lt;span style="color:#e6db74"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#e6db74"&gt; for i in $(seq 60); do
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#e6db74"&gt; echo &amp;#34;$(date): container1 / main&amp;#34; &amp;gt;&amp;gt; /var/log/startup-sequence-test/message
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#e6db74"&gt; sleep 1
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#e6db74"&gt; done
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#e6db74"&gt; tail -f /dev/null&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#f92672"&gt;lifecycle&lt;/span&gt;:
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#f92672"&gt;postStart&lt;/span&gt;:
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#f92672"&gt;exec&lt;/span&gt;:
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#f92672"&gt;command&lt;/span&gt;:
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; - &lt;span style="color:#e6db74"&gt;&amp;#34;/bin/sh&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; - &lt;span style="color:#e6db74"&gt;&amp;#34;-c&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; - |&lt;span style="color:#e6db74"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#e6db74"&gt; for i in $(seq 30); do
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#e6db74"&gt; echo &amp;#34;$(date): container1 / post start hook&amp;#34; &amp;gt;&amp;gt; /var/log/startup-sequence-test/message
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#e6db74"&gt; sleep 1
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#e6db74"&gt; done&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#f92672"&gt;readinessProbe&lt;/span&gt;:
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#f92672"&gt;exec&lt;/span&gt;:
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#f92672"&gt;command&lt;/span&gt;:
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; - &lt;span style="color:#e6db74"&gt;&amp;#34;/bin/sh&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; - &lt;span style="color:#e6db74"&gt;&amp;#34;-c&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; - |&lt;span style="color:#e6db74"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#e6db74"&gt; echo &amp;#34;$(date): container1 / readiness probe&amp;#34; &amp;gt;&amp;gt; /var/log/startup-sequence-test/message&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#f92672"&gt;livenessProbe&lt;/span&gt;:
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#f92672"&gt;exec&lt;/span&gt;:
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#f92672"&gt;command&lt;/span&gt;:
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; - &lt;span style="color:#e6db74"&gt;&amp;#34;/bin/sh&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; - &lt;span style="color:#e6db74"&gt;&amp;#34;-c&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; - |&lt;span style="color:#e6db74"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#e6db74"&gt; echo &amp;#34;$(date): container1 / liveness probe&amp;#34; &amp;gt;&amp;gt; /var/log/startup-sequence-test/message&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#f92672"&gt;volumeMounts&lt;/span&gt;:
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; - &lt;span style="color:#f92672"&gt;mountPath&lt;/span&gt;: &lt;span style="color:#ae81ff"&gt;/var/log/startup-sequence-test&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#f92672"&gt;name&lt;/span&gt;: &lt;span style="color:#ae81ff"&gt;log-volume&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; - &lt;span style="color:#f92672"&gt;name&lt;/span&gt;: &lt;span style="color:#ae81ff"&gt;container2&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#f92672"&gt;image&lt;/span&gt;: &lt;span style="color:#ae81ff"&gt;busybox:latest&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#f92672"&gt;args&lt;/span&gt;:
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; - &lt;span style="color:#ae81ff"&gt;/bin/sh&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; - -&lt;span style="color:#ae81ff"&gt;c&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; - |&lt;span style="color:#e6db74"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#e6db74"&gt; for i in $(seq 60); do
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#e6db74"&gt; echo &amp;#34;$(date): container2 / main&amp;#34; &amp;gt;&amp;gt; /var/log/startup-sequence-test/message
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#e6db74"&gt; sleep 1
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#e6db74"&gt; done
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt;&lt;span style="color:#e6db74"&gt; tail -f /dev/null&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#f92672"&gt;volumeMounts&lt;/span&gt;:
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; - &lt;span style="color:#f92672"&gt;mountPath&lt;/span&gt;: &lt;span style="color:#ae81ff"&gt;/var/log/startup-sequence-test&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#f92672"&gt;name&lt;/span&gt;: &lt;span style="color:#ae81ff"&gt;log-volume&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#f92672"&gt;volumes&lt;/span&gt;:
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; - &lt;span style="color:#f92672"&gt;name&lt;/span&gt;: &lt;span style="color:#ae81ff"&gt;log-volume&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#f92672"&gt;emptyDir&lt;/span&gt;: {}
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;このPodをクラスタに適用した後、&lt;code&gt;/var/log/startup-sequence-test/message&lt;/code&gt; に書かれている内容を確認すれば、それぞれの処理がどのような順番で実行されているかが分かるというわけです。&lt;/p&gt;</description></item><item><title>kubeletのAPIを調べてみた</title><link>https://alpaca-lab.blog/ja/posts/getting-started-with-kubelet-api/</link><pubDate>Mon, 19 Dec 2022 00:00:00 +0000</pubDate><guid>https://alpaca-lab.blog/ja/posts/getting-started-with-kubelet-api/</guid><description>&lt;h2 id="これはなに"&gt;これはなに&lt;/h2&gt;
+&lt;p&gt;ひょんなことからkubeletのAPIを使った開発をしてみたくなりまして、そのための調査をしたので共有したいと思います。&lt;/p&gt;
+&lt;p&gt;自分は今までこれといって触る機会がなく、コンテナのメトリクスを取るのに使われているということで、たまーに「ああ、kubeletさんのAPIは今日も頑張ってくれているのだなぁ」と思いを馳せるくらいの温度感でした。Kubernetesエンジニアの多くが、同じような感想を持たれているのではないでしょうか。&lt;/p&gt;
+&lt;p&gt;そんな縁の下の力持ち、kubeletのAPIさん、この記事をきっかけに、今までより少しだけ身近に感じてくれたらいいなって、そんなふうに思います♪&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;📘【note】
+この記事は&lt;a href="https://qiita.com/advent-calendar/2022/kubernetes"&gt;Kubernetes Advent Calendar 2022&lt;/a&gt;の19日目です。&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;h2 id="どんなapiがあるの"&gt;どんなAPIがあるの&lt;/h2&gt;
+&lt;p&gt;kubeletのAPIの詳細を記したドキュメントが見つけられなかったので、以下の箇所を起点にして、コードを追って調べていきます。&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href="https://github.com/kubernetes/kubernetes/blob/v1.25.5/pkg/kubelet/server/server.go"&gt;https://github.com/kubernetes/kubernetes/blob/v1.25.5/pkg/kubelet/server/server.go&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;以下、調査の結果わかったもの。&lt;/p&gt;
+&lt;h4 id="kubernetesリソースの取得"&gt;Kubernetesリソースの取得&lt;/h4&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;/pods&lt;/code&gt;
+&lt;ul&gt;
+&lt;li&gt;kubeletと同一Node上の、Podリソースのリストを取得できる&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h4 id="メトリクスの取得"&gt;メトリクスの取得&lt;/h4&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;/metrics&lt;/code&gt;
+&lt;ul&gt;
+&lt;li&gt;kubelet自身の各種メトリクスがを取得できる&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;/metrics/cadvisor&lt;/code&gt;
+&lt;ul&gt;
+&lt;li&gt;kubeletと同一Node上の、コンテナのCPU使用量などの各種メトリクスを取得できる&lt;/li&gt;
+&lt;li&gt;kubeletにはcAdvisorが組み込まれており、それが提供するメトリクスを取得する。そのあたりの詳しい話は&lt;a href="https://qiita.com/ryysud/items/23eab7110de7337a8bf3"&gt;@ryysudさんの記事&lt;/a&gt;を参照ください&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;/metrics/probes&lt;/code&gt;
+&lt;ul&gt;
+&lt;li&gt;kubeletと同一Node上の、コンテナのProbe(Readiness/Liveness/StartUp)の成否を集計したメトリクスを取得できる&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;/metrics/resource&lt;/code&gt;
+&lt;ul&gt;
+&lt;li&gt;kubeletと同一Node上の、コンテナ単位、Pod単位それぞれのCPU、メモリ使用量を取得できる&lt;/li&gt;
+&lt;li&gt;v0.6.0以降のMetrics Serverはこのエンドポイントからメトリクスを収集している&lt;sup id="fnref:1"&gt;&lt;a href="#fn:1" class="footnote-ref" role="doc-noteref"&gt;1&lt;/a&gt;&lt;/sup&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;/stats/summary&lt;/code&gt;
+&lt;ul&gt;
+&lt;li&gt;kubeletがあるNodeと、そのNode上のPodのCPU、メモリ、ネットワーク、ディスク関連のメトリクスを取得できる&lt;/li&gt;
+&lt;li&gt;他はPrometheusのExporterの形式だが、このエンドポイントはJSONで値が取得できる&lt;/li&gt;
+&lt;li&gt;v0.5.x以前のMetrics Serverはこのエンドポイントからメトリクスを収集している&lt;sup id="fnref1:1"&gt;&lt;a href="#fn:1" class="footnote-ref" role="doc-noteref"&gt;1&lt;/a&gt;&lt;/sup&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h4 id="kubectlコマンドの機能で内部的に利用されるもの"&gt;kubectlコマンドの機能で内部的に利用されるもの&lt;/h4&gt;
+&lt;p&gt;以下は、kubectlのサブコマンドを実行したときに使われているAPIと推測されます。&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;/run&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;/exec&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;/attach&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;/portForward&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;/logs&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;パスの名前から察するに &lt;code&gt;run&lt;/code&gt;, &lt;code&gt;exec&lt;/code&gt;, &lt;code&gt;attach&lt;/code&gt;, &lt;code&gt;port-forward&lt;/code&gt;, &lt;code&gt;logs&lt;/code&gt; の各コマンドで使われているものだと思われます。&lt;/p&gt;
+&lt;h4 id="他"&gt;他&lt;/h4&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;/checkpoint&lt;/code&gt;
+&lt;ul&gt;
+&lt;li&gt;Kubernetes v1.25からalpha機能として提供されているCheckpoint Restoreで使われるAPI&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;ContainerCheckpoint&lt;/code&gt; フィーチャーゲートを有効にしつつ、コンテナランタイムとしてこれに対応するものを利用していると利用可能になる&lt;/li&gt;
+&lt;li&gt;Checkpoint Restore機能については、&lt;a href="https://www.youtube.com/watch?v=0RUDoTi-Lw4"&gt;KubeCon NA 2021のセッション&lt;/a&gt;があります&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;/debug/pprof&lt;/code&gt;
+&lt;ul&gt;
+&lt;li&gt;pprofプロファイラのエンドポイント&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;/debug/flags/v&lt;/code&gt;
+&lt;ul&gt;
+&lt;li&gt;kubeletで利用可能な起動フラグの一覧を取得できる&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id="認証認可の仕組み"&gt;認証、認可の仕組み&lt;/h2&gt;
+&lt;p&gt;認証、認可については以下のドキュメントがあります。&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href="https://kubernetes.io/docs/reference/access-authn-authz/kubelet-authn-authz/"&gt;https://kubernetes.io/docs/reference/access-authn-authz/kubelet-authn-authz/&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;ポイントをピックアップすると、以下のような感じです。&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;認証
+&lt;ul&gt;
+&lt;li&gt;認証はデフォルトではOFF&lt;/li&gt;
+&lt;li&gt;X.509クライアント証明書認証とAPI Bearer Token認証をかけることができる&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;認可
+&lt;ul&gt;
+&lt;li&gt;Role/ClusterRoleで &lt;code&gt;nodes/[sub-resource]&lt;/code&gt; に対する権限を与えるとアクセスが許可される&lt;/li&gt;
+&lt;li&gt;APIのパスに応じて、対応するsub-resource名が異なってくる（具体的な対応関係は上記のリンクを参照）&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id="実際にアクセスしてみる"&gt;実際にアクセスしてみる&lt;/h2&gt;
+&lt;p&gt;というわけで、API Bearer Tokenによる認証がかかったkubeletのAPIにアクセスしてみます。
+ここでは簡単のためにKubernetes上にデプロイしたPodから、kubeletのAPIにアクセスすることにします。&lt;/p&gt;</description></item><item><title>カスタムコントローラーで任意のイベントを起点にReconcileを実行する</title><link>https://alpaca-lab.blog/ja/posts/custom-controller-for-out-of-cluster-events/</link><pubDate>Thu, 02 Dec 2021 00:00:00 +0000</pubDate><guid>https://alpaca-lab.blog/ja/posts/custom-controller-for-out-of-cluster-events/</guid><description>&lt;h2 id="これはなに"&gt;これはなに&lt;/h2&gt;
+&lt;p&gt;Kubernetesクラスター外で起きたイベントを起点にReconcileをおこなうカスタムコントローラーの書き方を調べたので、その内容を書きます。
+これができると、Kubernetesのカスタムリソースでクラスターの外にあるシステムを管理する、そんなコントローラーを作ることができます。素敵！&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;📘【note】
+この記事は&lt;a href="https://qiita.com/advent-calendar/2021/kubernetes"&gt;Kubernetes Advent Calendar 2021&lt;/a&gt;の3日目です。
+昨日は@makocchiさんの&lt;a href="https://makocchi.medium.com/how-to-use-advanced-statefulset-ja-779ca00e2dda"&gt;Advanced StatefulSet を使ってみよう&lt;/a&gt;でした。&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;h2 id="目次"&gt;目次&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;例えばこんなものを作りたい&lt;/li&gt;
+&lt;li&gt;controller-runtimeのWatches()の話&lt;/li&gt;
+&lt;li&gt;実装していく！
+&lt;ol&gt;
+&lt;li&gt;Reconcileメソッド&lt;/li&gt;
+&lt;li&gt;定期的にイベントを発生させるRunnable構造体&lt;/li&gt;
+&lt;li&gt;コントローラーのセットアップ&lt;/li&gt;
+&lt;li&gt;コントローラーをManagerに登録する&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;li&gt;まとめ&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id="例えばこんなものを作りたい"&gt;例えばこんなものを作りたい&lt;/h2&gt;
+&lt;p&gt;本エントリでは、簡単な例として以下のようなコントローラーを題材にします。&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Kubernetesクラスターの外にあるオブジェクトストレージのバケットを、カスタムリソース&amp;quot;StorageBucket&amp;quot;で定義する&lt;/li&gt;
+&lt;li&gt;カスタムリソースで定義されたStorageBucketに対してヘルスチェックを定期的に行い、結果をStorageBucketリソースのStatusフィールドに記録する&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;img loading="lazy" src="https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/custom-controller-for-out-of-cluster-events-01.dio.svg"&gt;&lt;/p&gt;
+&lt;p&gt;これを実現するため、「一定時間が経過した」というイベントを起点にカスタムコントローラーのReconcileを実行する、という実装をしてみます。&lt;/p&gt;
+&lt;h2 id="controller-runtimeのwatchesの話"&gt;controller-runtimeのWatches()の話&lt;/h2&gt;
+&lt;p&gt;controller-runtimeの&lt;a href="https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.10.3/pkg/builder"&gt;builderパッケージ&lt;/a&gt;には、コントローラーのBuilderユーティリティが用意されていて、これによって所定のリソースを監視対象とするコントローラーを作ることができます。&lt;/p&gt;
+&lt;p&gt;例えば、&lt;a href="https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.10.3/pkg/builder#Builder.For"&gt;builder.For()&lt;/a&gt;, &lt;a href="https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.10.3/pkg/builder#Builder.Owns"&gt;builder.Owns()&lt;/a&gt; を以下のように実行すると、ReplicaSetとPodリソースに何らかのイベントがあったときにReconcileがトリガーされることになります。&lt;/p&gt;
+&lt;p&gt;&lt;em&gt;※ Controller Runtimeの&lt;a href="https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.10.3/pkg/builder#example-Builder"&gt;コード例&lt;/a&gt;より&lt;/em&gt;&lt;/p&gt;
+&lt;div class="highlight"&gt;&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"&gt;&lt;code class="language-go" data-lang="go"&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#75715e"&gt;// ...(snip)...&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;err&lt;/span&gt; = &lt;span style="color:#a6e22e"&gt;builder&lt;/span&gt;.
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;ControllerManagedBy&lt;/span&gt;(&lt;span style="color:#a6e22e"&gt;mgr&lt;/span&gt;). &lt;span style="color:#75715e"&gt;// Create the ControllerManagedBy&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;For&lt;/span&gt;(&lt;span style="color:#f92672"&gt;&amp;amp;&lt;/span&gt;&lt;span style="color:#a6e22e"&gt;appsv1&lt;/span&gt;.&lt;span style="color:#a6e22e"&gt;ReplicaSet&lt;/span&gt;{}). &lt;span style="color:#75715e"&gt;// ReplicaSet is the Application API&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;Owns&lt;/span&gt;(&lt;span style="color:#f92672"&gt;&amp;amp;&lt;/span&gt;&lt;span style="color:#a6e22e"&gt;corev1&lt;/span&gt;.&lt;span style="color:#a6e22e"&gt;Pod&lt;/span&gt;{}). &lt;span style="color:#75715e"&gt;// ReplicaSet owns Pods created by it&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;Complete&lt;/span&gt;(&lt;span style="color:#f92672"&gt;&amp;amp;&lt;/span&gt;&lt;span style="color:#a6e22e"&gt;ReplicaSetReconciler&lt;/span&gt;{})
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#66d9ef"&gt;if&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;err&lt;/span&gt; &lt;span style="color:#f92672"&gt;!=&lt;/span&gt; &lt;span style="color:#66d9ef"&gt;nil&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;log&lt;/span&gt;.&lt;span style="color:#a6e22e"&gt;Error&lt;/span&gt;(&lt;span style="color:#a6e22e"&gt;err&lt;/span&gt;, &lt;span style="color:#e6db74"&gt;&amp;#34;could not create controller&amp;#34;&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;os&lt;/span&gt;.&lt;span style="color:#a6e22e"&gt;Exit&lt;/span&gt;(&lt;span style="color:#ae81ff"&gt;1&lt;/span&gt;)
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#75715e"&gt;// ...(snip)...&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;ですが、これはあくまでKubernetesリソースに起きたイベントを起点にReconcileをトリガーするもので、それ以外のイベント、このエントリの例で言えば「一定時間が経過した」ことをきっかけにReconcileを実行することはできません。&lt;/p&gt;
+&lt;p&gt;そんなときのために、builderパッケージには&lt;a href="https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.10.3/pkg/builder#Builder.Watches"&gt;builder.Watches()&lt;/a&gt;メソッドが用意されています。
+Watches()メソッドを使うと、とあるチャネルにオブジェクトをエンキューすることを起点にしてReconcileを実行させることができます。そのチャネルに一定時間ごとにオブジェクトを投入してあげれば、今回やりたいことができるわけです。&lt;/p&gt;
+&lt;p&gt;Watches()メソッドのシグニチャは以下のようになっています。&lt;/p&gt;</description></item><item><title>アルパカでもわかる安全なPodの終了 - 実験編</title><link>https://alpaca-lab.blog/ja/posts/kubernetes-graceful-shutdown-experiment/</link><pubDate>Thu, 17 Dec 2020 00:00:00 +0000</pubDate><guid>https://alpaca-lab.blog/ja/posts/kubernetes-graceful-shutdown-experiment/</guid><description>&lt;h2 id="これはなに"&gt;これはなに&lt;/h2&gt;
+&lt;p&gt;この記事は&lt;a href="https://zenn.dev/hhiroshell/articles/kubernetes-graceful-shutdown"&gt;アルパカでもわかる安全なPodの終了&lt;/a&gt;の続編です。&lt;/p&gt;
+&lt;p&gt;前回は、Podの終了時の動作をKubernetesの各種コンポーネントの仕組みを踏まえつつ考察しました。
+Deploymentのローリングアップデートを行うとPodの再起動を伴うことになりますが、このときリクエストを欠損なく処理するために、以下2つの対策が有効であることが分かりました。&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;preStopフックでのスリープ&lt;/li&gt;
+&lt;li&gt;アプリケーションのGraceful Shutdown&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;この記事では、Deploymentのローリングアップデートをオンラインで実際に行い、上記対策が本当に有効かどうかを確かめていきます。&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;📘【note】
+この記事は&lt;a href="https://qiita.com/advent-calendar/2020/kubernetes2"&gt;Kubernetes2 Advent Calendar 2020&lt;/a&gt;の18日目です。
+昨日は@south37さんの&lt;a href="https://south37.hatenablog.com/entry/2020/12/11/%E6%89%8B%E3%82%92%E5%8B%95%E3%81%8B%E3%81%97%E3%81%A6%E5%AD%A6%E3%81%B6%E3%82%B3%E3%83%B3%E3%83%86%E3%83%8A%E6%A8%99%E6%BA%96_-_Container_Runtime_%E7%B7%A8"&gt;手を動かして学ぶコンテナ標準 - Container Runtime 編&lt;/a&gt;でした。&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;h2 id="安全にpodを終了するための2つの対策"&gt;安全にPodを終了するための2つの対策&lt;/h2&gt;
+&lt;p&gt;上述のとおり、Podが安全に終了するためにできることは大きく2つがあります。以下にそれぞれの概要を記します。
+内部的な動作の詳細については、&lt;a href="https://zenn.dev/hhiroshell/articles/kubernetes-graceful-shutdown"&gt;前回の記事&lt;/a&gt;を参照ください。&lt;/p&gt;
+&lt;h3 id="prestopフックでのスリープ"&gt;preStopフックでのスリープ&lt;/h3&gt;
+&lt;p&gt;preStopフックは、コンテナを停止する前に実行される前処理（フック）を定義する機能です。
+preStopフックで一定時間の &lt;code&gt;sleep&lt;/code&gt; を行うと、コンテナが停止される前に指定した時間だけ待機する動作になります。
+これによって、Podへのトラフィックの配送が止まってから（サービスアウトしてから）終了処理に入るようにすることができます。&lt;/p&gt;
+&lt;p&gt;&lt;img loading="lazy" src="https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/kubernetes-graceful-shutdown-experiment-01.dio.svg"&gt;&lt;/p&gt;
+&lt;p&gt;ここで注意すべき点は、サービスアウトとpreStopフックに依存関係は持たせられず、サービスアウトを確認してからpreStopフックを抜けるといったような制御はできないことです。
+このため、コンテナの終了処理をサービスアウトの後に行う、ということを保証することはできません。&lt;/p&gt;
+&lt;h3 id="アプリケーションのgraceful-shutdown"&gt;アプリケーションのGraceful Shutdown&lt;/h3&gt;
+&lt;p&gt;Graceful Shutdownをアプリケーションに実装すると、アプリケーションのシャットダウンが開始されたとき、その時点で受け付けているリクエストが処理されてからプロセスを終了するということが保証できます。&lt;/p&gt;
+&lt;p&gt;&lt;img loading="lazy" src="https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/kubernetes-graceful-shutdown-experiment-02.dio.svg"&gt;&lt;/p&gt;
+&lt;p&gt;ただし、アプリケーションのシャットダウンが開始されて以降は、新たにリクエストを受け付けることはできないことに注意してください。&lt;/p&gt;
+&lt;p&gt;それでは、これら2つの対策がローリングアップデート中のエラーの抑制に役立つのか、実験して確かめていきたいと思います。&lt;/p&gt;
+&lt;h2 id="実験してみた"&gt;実験してみた！&lt;/h2&gt;
+&lt;h3 id="実験の流れ"&gt;実験の流れ&lt;/h3&gt;
+&lt;p&gt;実験用のアプリケーションをKubernetesクラスターにデプロイしておき、一定量のトラフィックを送ります。
+リクエストが送られている間に、Deploymentの再起動 (&lt;code&gt;kubectl rollout restart&lt;/code&gt;) を行います。&lt;/p&gt;
+&lt;p&gt;&lt;img loading="lazy" src="https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/kubernetes-graceful-shutdown-experiment-03.dio.svg"&gt;&lt;/p&gt;
+&lt;p&gt;実際の運用場面では、再起動ではなくローリングアップデートが行われることが多いと思いますが、Podの停止・起動さえされれば検証の目的としては足りるため、 &lt;code&gt;kubectl rollout restart&lt;/code&gt; で代替します。&lt;/p&gt;
+&lt;h3 id="アプリケーション"&gt;アプリケーション&lt;/h3&gt;
+&lt;p&gt;実験用にサンプルアプリケーションを用意しています。アプリの概要は以下のとおりです。&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href="https://github.com/hhiroshell/cowweb-go/tree/v1.1.1"&gt;https://github.com/hhiroshell/cowweb-go/tree/v1.1.1&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;Go製のサンプルアプリケーション&lt;/li&gt;
+&lt;li&gt;起動フラグで1リクエストの処理でかかるCPU負荷を調整できる&lt;sup id="fnref:1"&gt;&lt;a href="#fn:1" class="footnote-ref" role="doc-noteref"&gt;1&lt;/a&gt;&lt;/sup&gt;&lt;/li&gt;
+&lt;li&gt;起動フラグで終了時にGraceful Shutdownを行うかどうかを指定することができる&lt;/li&gt;
+&lt;li&gt;preStopフックはDeploymentのマニフェストに記述してデプロイする&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h4 id="cpu負荷の調整方法"&gt;CPU負荷の調整方法&lt;/h4&gt;
+&lt;p&gt;ランダム値を生成する処理を繰り返すことでCPU負荷がかかるようにしています。
+ループ回数を起動フラグで &lt;code&gt;l=640&lt;/code&gt; などとすることで指定できます。&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href="https://github.com/hhiroshell/cowweb-go/blob/823894c18cbdec4c796e6b91deab078034d75fb8/pkg/infrastructure/cowsay/slow_cowsay.go#L19-L23"&gt;https://github.com/hhiroshell/cowweb-go/blob/823894c18cbdec4c796e6b91deab078034d75fb8/pkg/infrastructure/cowsay/slow_cowsay.go#L19-L23&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;div class="highlight"&gt;&lt;pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"&gt;&lt;code class="language-go" data-lang="go"&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#75715e"&gt;// c.load が l フラグで指定した値となる&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#66d9ef"&gt;for&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;i&lt;/span&gt; &lt;span style="color:#f92672"&gt;:=&lt;/span&gt; &lt;span style="color:#ae81ff"&gt;0&lt;/span&gt;; &lt;span style="color:#a6e22e"&gt;i&lt;/span&gt; &amp;lt; &lt;span style="color:#a6e22e"&gt;c&lt;/span&gt;.&lt;span style="color:#a6e22e"&gt;load&lt;/span&gt;; &lt;span style="color:#a6e22e"&gt;i&lt;/span&gt;&lt;span style="color:#f92672"&gt;++&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#66d9ef"&gt;for&lt;/span&gt; &lt;span style="color:#a6e22e"&gt;j&lt;/span&gt; &lt;span style="color:#f92672"&gt;:=&lt;/span&gt; &lt;span style="color:#ae81ff"&gt;0&lt;/span&gt;; &lt;span style="color:#a6e22e"&gt;j&lt;/span&gt; &amp;lt; &lt;span style="color:#a6e22e"&gt;c&lt;/span&gt;.&lt;span style="color:#a6e22e"&gt;load&lt;/span&gt;; &lt;span style="color:#a6e22e"&gt;j&lt;/span&gt;&lt;span style="color:#f92672"&gt;++&lt;/span&gt; {
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; &lt;span style="color:#a6e22e"&gt;rand&lt;/span&gt;.&lt;span style="color:#a6e22e"&gt;Intn&lt;/span&gt;(len(&lt;span style="color:#a6e22e"&gt;cows&lt;/span&gt;))
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;span style="display:flex;"&gt;&lt;span&gt; }
+&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;h4 id="graceful-shutdownの実装方法"&gt;Graceful Shutdownの実装方法&lt;/h4&gt;
+&lt;p&gt;Graceful ShutdownはGo標準の &lt;code&gt;http.Server.Shutdown()&lt;/code&gt; を使って実装しています。
+こちらも起動フラグで、Gracefulに終了するかどうかを指定できる仕掛けにしています。&lt;/p&gt;</description></item><item><title>アルパカでもわかる安全なPodの終了</title><link>https://alpaca-lab.blog/ja/posts/kubernetes-graceful-shutdown/</link><pubDate>Fri, 18 Sep 2020 00:00:00 +0000</pubDate><guid>https://alpaca-lab.blog/ja/posts/kubernetes-graceful-shutdown/</guid><description>&lt;h2 id="これはなに"&gt;これはなに&lt;/h2&gt;
+&lt;p&gt;KubernetesにおいてPodが終了するまでの動作を整理します。また、それを踏まえて、安全に（リクエストの欠損を極小化した）Podを終了する方法を考察します。&lt;/p&gt;
+&lt;p&gt;アプリケーションとしては、HTTPリクエストを受けてレスポンスを返却する、一般的なWebアプリケーションを想定します。&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;📘【note】
+この記事の内容は、@superbrothersさんによる&lt;a href="https://qiita.com/superbrothers/items/3ac78daba3560ea406b2"&gt;詳解 Pods の終了&lt;/a&gt;と&lt;a href="https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-termination"&gt;公式ドキュメント&lt;/a&gt;が元になっていますのでぜひそちらも参照ください。この記事は 2020/09/23 現在の最新版のKubernetes で内容を再確認するとともに、図を足したり、解説を増やしたりしています。&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;h2 id="目次"&gt;目次&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;Podが終了する過程&lt;/li&gt;
+&lt;li&gt;安全なPodの終了のために注意すべきこと&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2 id="podが終了する過程"&gt;Podが終了する過程&lt;/h2&gt;
+&lt;p&gt;コンテナイメージの更新や &lt;code&gt;kubectl delete pod&lt;/code&gt; の実行など、Podの終了のトリガーとなる事象が起きると、それまで起動していたPodに対する終了処理が開始されます。Podの終了処理の全体の流れは以下のとおりです。&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;Podの終了予定時刻をPodリソースに設定する&lt;/li&gt;
+&lt;li&gt;Podリソースをウォッチする複数のコンポーネントが、それぞれの終了処理を実行する
+&lt;ul&gt;
+&lt;li&gt;2-a. kubeletによるプロセスのシャットダウン&lt;/li&gt;
+&lt;li&gt;2-b. endpoints controllerとkube-proxyによるサービスアウト&lt;/li&gt;
+&lt;li&gt;2-c. Ownerリソースによる管理からの除外&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;2.の3つの処理は、それぞれを担当するコンポーネントが独立して実行するため、例えば「サービスアウトしてからシャットダウンする」といったような互いに依存関係を持った制御は行われません。これは、本エントリーのテーマのひとつである、「Podの安全な終了」を考える上で重要なポイントになりますので、注意してください。&lt;/p&gt;
+&lt;p&gt;&lt;img loading="lazy" src="https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/kubernetes-graceful-shutdown-01.dio.svg"&gt;&lt;/p&gt;
+&lt;p&gt;以降は、上に挙げた各処理において具体的にどのような処理が行われているかを説明します。&lt;/p&gt;
+&lt;h3 id="1--podの終了予定時刻をpodリソースに設定する"&gt;1 . Podの終了予定時刻をPodリソースに設定する&lt;/h3&gt;
+&lt;p&gt;削除対象しようとしているPodに対応するPodリソースに対して、 &lt;code&gt;.metadata.deletionTimestamp&lt;/code&gt; と &lt;code&gt;.metadata.deletionGracePeriodSeconds&lt;/code&gt; が設定されます。&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;.metadata.deletionTimestamp&lt;/code&gt; :
+&lt;ul&gt;
+&lt;li&gt;削除予定時刻。このフィールドの設定が行われる時刻に &lt;code&gt;.spec.terminationGracePeriodSeconds&lt;/code&gt; （デフォルト: 30秒）を加算した値が設定される&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;.metadata.deletionGracePeriodSeconds&lt;/code&gt; :
+&lt;ul&gt;
+&lt;li&gt;このフィールドの設定が行われる時点での &lt;code&gt;.spec.terminationGracePeriodSeconds&lt;/code&gt; の値が設定される&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;これをきっかけに、Podリソースをウォッチしている各コンポーネントが後続の終了処理を開始します。&lt;/p&gt;
+&lt;h3 id="2-a-kubeletによるプロセスのシャットダウン"&gt;2-a. kubeletによるプロセスのシャットダウン&lt;/h3&gt;
+&lt;p&gt;Podリソースに &lt;code&gt;.metadata.deletionTimestamp&lt;/code&gt; が設定されたことをkubeletが検知すると、kubeletは以下のシャットダウンプロセスを開始します。&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;2-a-1. preStopフックを実行する&lt;/li&gt;
+&lt;li&gt;2-a-2. Dockerデーモンにコンテナの終了を依頼する&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;preStopフックは、プロセスの終了前に実行する事前処理です。&lt;code&gt;.spec.containers[].lifecycle.preStop&lt;/code&gt; に処理内容を記述することができます。指定可能な処理は、任意のコマンドの実行、所定のエンドポイントへのHTTP GETリクエスト、TCPソケットのオープンの試行、の3種です。&lt;/p&gt;
+&lt;p&gt;preSropフックが終了するか、 &lt;code&gt;.metadata.deletionGracePeriodSeconds&lt;/code&gt; の時間が経過した場合、kubeletがDockerデーモンにコンテナの終了を依頼します&lt;sup id="fnref:1"&gt;&lt;a href="#fn:1" class="footnote-ref" role="doc-noteref"&gt;1&lt;/a&gt;&lt;/sup&gt; &lt;sup id="fnref:2"&gt;&lt;a href="#fn:2" class="footnote-ref" role="doc-noteref"&gt;2&lt;/a&gt;&lt;/sup&gt;。このとき、終了処理のタイムアウト時間として、以下の値が渡されます。&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;preStopフックが &lt;code&gt;.metadata.deletionGracePeriodSeconds&lt;/code&gt; までに終了した場合:
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;.metadata.deletionGracePeriodSeconds&lt;/code&gt; からpreStopフックの所要時間で引いた値（2秒以下だった場合は2秒に切り上げ）&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;preStopフックが &lt;code&gt;.metadata.deletionGracePeriodSeconds&lt;/code&gt; までに終了しなかった場合
+&lt;ul&gt;
+&lt;li&gt;2秒&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;コンテナの終了処理では、始めにコンテナにSIGTERMシグナルが送信されます。多くのアプリケーションでは、SIGTERMの受信を受けて終了処理を開始するように実装することが多いと思います(Gracefl Shutdown)。&lt;/p&gt;</description></item></channel></rss>
