@@ -33,7 +33,7 @@ When something triggers Pod termination — updating a container image, running 
 
 The three pieces of step 2 are each carried out independently by the component responsible for them, so there's no coordination between them — for example, there's no guarantee that a Pod is removed from service *before* it shuts down. Keep this in mind, since it's a key point for one of this post's central themes: safe Pod termination.
 
-![](https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/kubernetes-graceful-shutdown-01.dio.svg)
+![](/images/kubernetes-graceful-shutdown-01.dio.svg)
 
 Below, we'll look at exactly what happens in each of these steps.
 
@@ -74,19 +74,19 @@ Here's a diagram of the shutdown timeline and how it relates to `.metadata.delet
 
 ##### When the preStop hook finishes before `.metadata.deletionGracePeriodSeconds`
 
-![](https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/kubernetes-graceful-shutdown-02.dio.svg)
+![](/images/kubernetes-graceful-shutdown-02.dio.svg)
 
 ##### When the preStop hook does not finish by `.metadata.deletionGracePeriodSeconds`
 In this case, container shutdown proceeds without waiting for the preStop hook to finish. The timeout here is a fixed 2 seconds, so SIGKILL is sent 2 seconds after SIGTERM.
 
-![](https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/kubernetes-graceful-shutdown-03.dio.svg)
+![](/images/kubernetes-graceful-shutdown-03.dio.svg)
 
 ### 2-b. Service removal by the endpoints controller and kube-proxy
 Once `metadata.deletionTimestamp` is set on the Pod resource, the endpoints controller removes the Pod's endpoint from the Service resource[^3] (if EndpointSlice is enabled, the equivalent happens there instead).
 
 Once the endpoint is removed from the Service resource, kube-proxy updates the traffic-routing rules (in iptables proxy mode, this means updating the Node's iptables rules[^4]), which stops new TCP connections from being created to the Pod — i.e., it's removed from service.
 
-![](https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/kubernetes-graceful-shutdown-04.dio.svg)
+![](/images/kubernetes-graceful-shutdown-04.dio.svg)
 
 [^3]: https://github.com/kubernetes/kubernetes/blob/v1.18.9/pkg/controller/endpoint/endpoints_controller.go#L398-L401
 [^4]: https://github.com/kubernetes/kubernetes/blob/v1.18.9/pkg/proxy/iptables/proxier.go#L569-L571
@@ -94,7 +94,7 @@ Once the endpoint is removed from the Service resource, kube-proxy updates the t
 ### 2-c. Removal from management by the owner resource
 An owner resource is a higher-level resource that manages a given resource. For a Pod resource, this would be a ReplicaSet, a DaemonSet, and so on. If you're running a Pod via `kubectl create` on a ReplicaSet, a DaemonSet, or a Deployment (itself the owner of a ReplicaSet), that Pod is under the owner's management.
 
-![](https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/kubernetes-graceful-shutdown-05.dio.svg)
+![](/images/kubernetes-graceful-shutdown-05.dio.svg)
 
 Once `.metadata.deletionTimestamp` is set on the Pod resource, the Pod is removed from the owner resource's management.
 
@@ -106,7 +106,7 @@ The ReplicaSet controller checks the number of Pods under it on every reconcilia
 
 As a result, the controller determines that the number of Pods is below the ReplicaSet's configured replica count, and creates a new Pod[^7].
 
-![](https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/kubernetes-graceful-shutdown-06.dio.svg)
+![](/images/kubernetes-graceful-shutdown-06.dio.svg)
 
 In other words, once a Pod deletion is triggered, a new Pod is created without waiting for the old container's shutdown to finish.
 
@@ -119,7 +119,7 @@ What to watch out for when terminating Pods safely
 ---
 Laying the whole termination process out on a timeline again, it looks like this:
 
-![](https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/kubernetes-graceful-shutdown-07.dio.svg)
+![](/images/kubernetes-graceful-shutdown-07.dio.svg)
 
 Once `.metadata.deletionTimestamp` is set on the Pod resource, three kinds of processing kick off — and the important part is that they run independently, with no dependency on each other.
 Because of this, it's entirely possible for the container to start shutting down before it's actually removed from service, causing some traffic to fail.
@@ -130,13 +130,13 @@ Preventing this requires countermeasures like the following.
 Sleep for a sufficient amount of time in the preStop hook, so that SIGTERM isn't sent until the Pod has actually been removed from service.
 SIGTERM then triggers graceful shutdown, which waits for already-connected connections to finish being handled before stopping the process.
 
-![](https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/kubernetes-graceful-shutdown-08.dio.svg)
+![](/images/kubernetes-graceful-shutdown-08.dio.svg)
 
 ### Countermeasure 2: the ultimate graceful shutdown
 Trigger graceful shutdown from either the preStop hook or SIGTERM.
 The graceful shutdown logic keeps accepting new connections while it waits for every connection to finish being handled, and only then stops the process.
 
-![](https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/kubernetes-graceful-shutdown-09.dio.svg)
+![](/images/kubernetes-graceful-shutdown-09.dio.svg)
 
 ### Comparing the two approaches
 Countermeasure 1 is relatively easy to implement, but has the downside that setting a generous sleep time slows down Pod termination. That said, as we saw with the ReplicaSet's behavior, the owner resource already treats the Pod as terminated the moment `.metadata.deletionTimestamp` is set, so in practice this may not do much harm.
