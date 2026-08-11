@@ -1,0 +1,7 @@
+/* Add native Japanese fonts so ja pages match the look of en pages. */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans',
+        'Segoe UI', 'Yu Gothic', YuGothic, Meiryo,
+        Roboto, 'Noto Sans CJK JP', 'Noto Sans JP',
+        Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', Arial, sans-serif;
+}
