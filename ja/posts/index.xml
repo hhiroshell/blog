@@ -212,7 +212,7 @@
 &lt;li&gt;Kubernetesクラスターの外にあるオブジェクトストレージのバケットを、カスタムリソース&amp;quot;StorageBucket&amp;quot;で定義する&lt;/li&gt;
 &lt;li&gt;カスタムリソースで定義されたStorageBucketに対してヘルスチェックを定期的に行い、結果をStorageBucketリソースのStatusフィールドに記録する&lt;/li&gt;
 &lt;/ul&gt;
-&lt;p&gt;&lt;img loading="lazy" src="https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/custom-controller-for-out-of-cluster-events-01.dio.svg"&gt;&lt;/p&gt;
+&lt;p&gt;&lt;img loading="lazy" src="https://alpaca-lab.blog/images/custom-controller-for-out-of-cluster-events-01.dio.svg"&gt;&lt;/p&gt;
 &lt;p&gt;これを実現するため、「一定時間が経過した」というイベントを起点にカスタムコントローラーのReconcileを実行する、という実装をしてみます。&lt;/p&gt;
 &lt;h2 id="controller-runtimeのwatchesの話"&gt;controller-runtimeのWatches()の話&lt;/h2&gt;
 &lt;p&gt;controller-runtimeの&lt;a href="https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.10.3/pkg/builder"&gt;builderパッケージ&lt;/a&gt;には、コントローラーのBuilderユーティリティが用意されていて、これによって所定のリソースを監視対象とするコントローラーを作ることができます。&lt;/p&gt;
@@ -253,19 +253,19 @@ Deploymentのローリングアップデートを行うとPodの再起動を伴�
 &lt;p&gt;preStopフックは、コンテナを停止する前に実行される前処理（フック）を定義する機能です。
 preStopフックで一定時間の &lt;code&gt;sleep&lt;/code&gt; を行うと、コンテナが停止される前に指定した時間だけ待機する動作になります。
 これによって、Podへのトラフィックの配送が止まってから（サービスアウトしてから）終了処理に入るようにすることができます。&lt;/p&gt;
-&lt;p&gt;&lt;img loading="lazy" src="https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/kubernetes-graceful-shutdown-experiment-01.dio.svg"&gt;&lt;/p&gt;
+&lt;p&gt;&lt;img loading="lazy" src="https://alpaca-lab.blog/images/kubernetes-graceful-shutdown-experiment-01.dio.svg"&gt;&lt;/p&gt;
 &lt;p&gt;ここで注意すべき点は、サービスアウトとpreStopフックに依存関係は持たせられず、サービスアウトを確認してからpreStopフックを抜けるといったような制御はできないことです。
 このため、コンテナの終了処理をサービスアウトの後に行う、ということを保証することはできません。&lt;/p&gt;
 &lt;h3 id="アプリケーションのgraceful-shutdown"&gt;アプリケーションのGraceful Shutdown&lt;/h3&gt;
 &lt;p&gt;Graceful Shutdownをアプリケーションに実装すると、アプリケーションのシャットダウンが開始されたとき、その時点で受け付けているリクエストが処理されてからプロセスを終了するということが保証できます。&lt;/p&gt;
-&lt;p&gt;&lt;img loading="lazy" src="https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/kubernetes-graceful-shutdown-experiment-02.dio.svg"&gt;&lt;/p&gt;
+&lt;p&gt;&lt;img loading="lazy" src="https://alpaca-lab.blog/images/kubernetes-graceful-shutdown-experiment-02.dio.svg"&gt;&lt;/p&gt;
 &lt;p&gt;ただし、アプリケーションのシャットダウンが開始されて以降は、新たにリクエストを受け付けることはできないことに注意してください。&lt;/p&gt;
 &lt;p&gt;それでは、これら2つの対策がローリングアップデート中のエラーの抑制に役立つのか、実験して確かめていきたいと思います。&lt;/p&gt;
 &lt;h2 id="実験してみた"&gt;実験してみた！&lt;/h2&gt;
 &lt;h3 id="実験の流れ"&gt;実験の流れ&lt;/h3&gt;
 &lt;p&gt;実験用のアプリケーションをKubernetesクラスターにデプロイしておき、一定量のトラフィックを送ります。
 リクエストが送られている間に、Deploymentの再起動 (&lt;code&gt;kubectl rollout restart&lt;/code&gt;) を行います。&lt;/p&gt;
-&lt;p&gt;&lt;img loading="lazy" src="https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/kubernetes-graceful-shutdown-experiment-03.dio.svg"&gt;&lt;/p&gt;
+&lt;p&gt;&lt;img loading="lazy" src="https://alpaca-lab.blog/images/kubernetes-graceful-shutdown-experiment-03.dio.svg"&gt;&lt;/p&gt;
 &lt;p&gt;実際の運用場面では、再起動ではなくローリングアップデートが行われることが多いと思いますが、Podの停止・起動さえされれば検証の目的としては足りるため、 &lt;code&gt;kubectl rollout restart&lt;/code&gt; で代替します。&lt;/p&gt;
 &lt;h3 id="アプリケーション"&gt;アプリケーション&lt;/h3&gt;
 &lt;p&gt;実験用にサンプルアプリケーションを用意しています。アプリの概要は以下のとおりです。&lt;/p&gt;
@@ -315,7 +315,7 @@ preStopフックで一定時間の &lt;code&gt;sleep&lt;/code&gt; を行うと�
 &lt;/li&gt;
 &lt;/ol&gt;
 &lt;p&gt;2.の3つの処理は、それぞれを担当するコンポーネントが独立して実行するため、例えば「サービスアウトしてからシャットダウンする」といったような互いに依存関係を持った制御は行われません。これは、本エントリーのテーマのひとつである、「Podの安全な終了」を考える上で重要なポイントになりますので、注意してください。&lt;/p&gt;
-&lt;p&gt;&lt;img loading="lazy" src="https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/kubernetes-graceful-shutdown-01.dio.svg"&gt;&lt;/p&gt;
+&lt;p&gt;&lt;img loading="lazy" src="https://alpaca-lab.blog/images/kubernetes-graceful-shutdown-01.dio.svg"&gt;&lt;/p&gt;
 &lt;p&gt;以降は、上に挙げた各処理において具体的にどのような処理が行われているかを説明します。&lt;/p&gt;
 &lt;h3 id="1--podの終了予定時刻をpodリソースに設定する"&gt;1 . Podの終了予定時刻をPodリソースに設定する&lt;/h3&gt;
 &lt;p&gt;削除対象しようとしているPodに対応するPodリソースに対して、 &lt;code&gt;.metadata.deletionTimestamp&lt;/code&gt; と &lt;code&gt;.metadata.deletionGracePeriodSeconds&lt;/code&gt; が設定されます。&lt;/p&gt;
