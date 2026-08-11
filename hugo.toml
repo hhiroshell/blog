@@ -54,6 +54,4 @@ defaultContentLanguageInSubdir = true
   ShowPostNavLinks = true
   ShowBreadCrumbs = true
   ShowCodeCopyButtons = true
-
-  [params.author]
-    name = "hhiroshell"
+  author = "hhiroshell"
