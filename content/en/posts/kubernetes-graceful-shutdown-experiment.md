@@ -31,7 +31,7 @@ The preStop hook lets you define processing (a hook) that runs before a containe
 If you `sleep` for a set duration in the preStop hook, the container waits that long before being stopped.
 This lets you make sure that termination handling only begins after traffic has actually stopped being routed to the Pod (i.e., after it's been removed from service).
 
-![](https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/kubernetes-graceful-shutdown-experiment-01.dio.svg)
+![](/images/kubernetes-graceful-shutdown-experiment-01.dio.svg)
 
 The thing to watch out for here: there's no dependency between service removal and the preStop hook — you can't have the preStop hook wait to confirm service removal before it exits.
 Because of this, there's no guarantee that container termination happens after service removal.
@@ -39,7 +39,7 @@ Because of this, there's no guarantee that container termination happens after s
 ### Application graceful shutdown
 If you implement graceful shutdown in your application, you can guarantee that when the application starts shutting down, it finishes handling whatever requests it was already accepting before the process exits.
 
-![](https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/kubernetes-graceful-shutdown-experiment-02.dio.svg)
+![](/images/kubernetes-graceful-shutdown-experiment-02.dio.svg)
 
 Note, though, that once the application starts shutting down, it can no longer accept new requests.
 
@@ -53,7 +53,7 @@ Running the experiment!
 We deploy a test application to a Kubernetes cluster ahead of time and send it a steady stream of traffic.
 While requests are being sent, we restart the Deployment (`kubectl rollout restart`).
 
-![](https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/kubernetes-graceful-shutdown-experiment-03.dio.svg)
+![](/images/kubernetes-graceful-shutdown-experiment-03.dio.svg)
 
 In an actual production setting you'd more likely see a rolling update rather than a restart, but for the purposes of this experiment all we need is for Pods to actually stop and start, so we're using `kubectl rollout restart` as a stand-in.
 
@@ -155,7 +155,7 @@ Looking at this alone, the preStop hook seems to suppress errors — but what's 
 
 The diagram below depicts what happens to a Pod during termination as part of a rolling update, for a case where the preStop sleep isn't long enough and errors occur as a result.
 
-![](https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/kubernetes-graceful-shutdown-experiment-04.dio.svg)
+![](/images/kubernetes-graceful-shutdown-experiment-04.dio.svg)
 
 The key thing to notice: the preStop sleep finishes and SIGTERM is sent to the container *before* kube-proxy has updated iptables.
 That means the application starts shutting down while traffic is still being routed to it — i.e., before it's been removed from service.
@@ -190,7 +190,7 @@ It looks like graceful shutdown also suppresses errors during a rolling update �
 
 The diagram below shows what happens to a Pod at termination time in the case where graceful shutdown successfully suppresses errors.
 
-![](https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/kubernetes-graceful-shutdown-experiment-05.dio.svg)
+![](/images/kubernetes-graceful-shutdown-experiment-05.dio.svg)
 
 Here, container termination only begins after kube-proxy has updated iptables (i.e., after service removal).
 At a glance this looks like there's no problem at all, but that's not quite right.

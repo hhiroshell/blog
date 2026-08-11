@@ -33,7 +33,7 @@ Deploymentのローリングアップデートを行うとPodの再起動を伴�
 preStopフックで一定時間の `sleep` を行うと、コンテナが停止される前に指定した時間だけ待機する動作になります。
 これによって、Podへのトラフィックの配送が止まってから（サービスアウトしてから）終了処理に入るようにすることができます。
 
-![](https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/kubernetes-graceful-shutdown-experiment-01.dio.svg)
+![](/images/kubernetes-graceful-shutdown-experiment-01.dio.svg)
 
 ここで注意すべき点は、サービスアウトとpreStopフックに依存関係は持たせられず、サービスアウトを確認してからpreStopフックを抜けるといったような制御はできないことです。
 このため、コンテナの終了処理をサービスアウトの後に行う、ということを保証することはできません。
@@ -41,7 +41,7 @@ preStopフックで一定時間の `sleep` を行うと、コンテナが停止�
 ### アプリケーションのGraceful Shutdown
 Graceful Shutdownをアプリケーションに実装すると、アプリケーションのシャットダウンが開始されたとき、その時点で受け付けているリクエストが処理されてからプロセスを終了するということが保証できます。
 
-![](https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/kubernetes-graceful-shutdown-experiment-02.dio.svg)
+![](/images/kubernetes-graceful-shutdown-experiment-02.dio.svg)
 
 ただし、アプリケーションのシャットダウンが開始されて以降は、新たにリクエストを受け付けることはできないことに注意してください。
 
@@ -55,7 +55,7 @@ Graceful Shutdownをアプリケーションに実装すると、アプリケー
 実験用のアプリケーションをKubernetesクラスターにデプロイしておき、一定量のトラフィックを送ります。
 リクエストが送られている間に、Deploymentの再起動 (`kubectl rollout restart`) を行います。
 
-![](https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/kubernetes-graceful-shutdown-experiment-03.dio.svg)
+![](/images/kubernetes-graceful-shutdown-experiment-03.dio.svg)
 
 実際の運用場面では、再起動ではなくローリングアップデートが行われることが多いと思いますが、Podの停止・起動さえされれば検証の目的としては足りるため、 `kubectl rollout restart` で代替します。
 
@@ -157,7 +157,7 @@ preStopスリープを行わない(0s)のケースでは4%のリクエストが�
 
 以下の図は、ローリングアップデートに伴うPodの終了時の動作を描いたもので、preStopスリープの長さが十分でないためにエラーが発生するケースを表しています。
 
-![](https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/kubernetes-graceful-shutdown-experiment-04.dio.svg)
+![](/images/kubernetes-graceful-shutdown-experiment-04.dio.svg)
 
 注目すべき点は、kube-proxyによりiptablesが更新される前の時点でpreStopスリープが終わり、コンテナにSIGTERMが送信されていることです。
 これは、アプリケーションへのトラフィックへの配送がまだ続いている（サービスアウトしていない）にも関わらず、アプリケーションのシャットダウンが始まっていることを意味します。
@@ -192,7 +192,7 @@ Graceful Shutdownをしない条件では5%ほどがエラー、する条件で�
 
 以下の図は、Graceful Shutdownによってエラーを抑制可能なケースでの、Pod終了時の動作を表しています。
 
-![](https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/kubernetes-graceful-shutdown-experiment-05.dio.svg)
+![](/images/kubernetes-graceful-shutdown-experiment-05.dio.svg)
 
 この場合では、kube-proxyによりiptablesが更新されてから（サービスアウトしてから）コンテナの終了処理に入っています。
 一見なにも問題ないように見えますが、そうとは言い切れません。

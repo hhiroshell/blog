@@ -35,7 +35,7 @@ As a simple example for this post, let's use a controller that does the followin
 - Defines an object storage bucket that lives outside the Kubernetes cluster via a custom resource, `StorageBucket`
 - Periodically health-checks the storage bucket defined by that custom resource, and records the result in the `StorageBucket` resource's Status field
 
-![](https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/custom-controller-for-out-of-cluster-events-01.dio.svg)
+![](/images/custom-controller-for-out-of-cluster-events-01.dio.svg)
 
 To make this work, we'll implement things so that the custom controller's Reconcile is triggered by the event "a certain amount of time has passed."
 
@@ -84,7 +84,7 @@ The first and second arguments are what matter for this post, so let's go over e
 
 Here's roughly how things flow from a GenericEvent to Reconcile:
 
-![](https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/custom-controller-for-out-of-cluster-events-02.dio.svg)
+![](/images/custom-controller-for-out-of-cluster-events-02.dio.svg)
 
 Now let's use Watches() to implement a controller that runs Reconcile periodically.
 

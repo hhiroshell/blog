@@ -103,7 +103,7 @@ Before running the experiment, let's predict what should happen. Roughly somethi
 
 Drawn as a diagram, this prediction looks like the following — the two containers start up at roughly the same time.
 
-![pod-startup-sequence-1](https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/pod-startup-sequence-1.png)
+![pod-startup-sequence-1](/images/pod-startup-sequence-1.png)
 
 
 Running the experiment
@@ -220,7 +220,7 @@ So, it seems the startup order for a Pod with multiple containers works like thi
 
 As a diagram, it looks like this:
 
-![pod-startup-sequence-2](https://raw.githubusercontent.com/hhiroshell/alpaca-notes/master/articles/images/pod-startup-sequence-2.png)
+![pod-startup-sequence-2](/images/pod-startup-sequence-2.png)
 
 
 Looking at the implementation

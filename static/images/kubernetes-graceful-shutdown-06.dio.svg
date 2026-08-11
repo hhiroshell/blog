@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="365px" height="211px" viewBox="-0.5 -0.5 365 211" content="&lt;mxfile host=&quot;fc47a5dd-e4f9-4432-8669-b558889ce249&quot; modified=&quot;2020-09-24T01:08:43.239Z&quot; agent=&quot;5.0 (Macintosh; Intel Mac OS X 10_15_6) AppleWebKit/537.36 (KHTML, like Gecko) Code/1.49.1 Chrome/83.0.4103.122 Electron/9.2.1 Safari/537.36&quot; etag=&quot;rYWjK6twia7mf_tCR0Hc&quot; version=&quot;13.1.3&quot;&gt;&lt;diagram id=&quot;6hGFLwfOUW9BJ-s0fimq&quot; name=&quot;Page-1&quot;&gt;5VjbjpswEP0av64AAyGPkJDty0qrplLbRwpesAo4Nc6tX98x2FwCySZ7UdWutNLax+OxPefM2AThRXG459Eme2AJyZFlJAeEl8iyTAPb8E8ixwaZY6cBUk4TZdQBa/qb6JkK3dKEVANDwVgu6GYIxqwsSSwGWMQ52w/Nnlg+XHUTpWQErOMoH6NfaSKyBvWsWYd/IjTN9MqmO29Gikgbq5NUWZSwfQ/CIcILzphoWsVhQXIZPB2XZt7qzGi7MU5Kcc0E3EzYRflWnU3tSxz1YUmZ+DJm0IvzqKpojHCQiSIHwITmeEm1C5IMoqg2cE9YQQQ/gsG+i52j4pH1wqYxTvJI0N0w9pGiMG3dtSs8Mgo7sQwlNx1qrTVj6KBiWx4TNacfqRM3pnnZj4h4SsTIDzR6Z+6gmodpTuybOClZCWCQRFVGEkXJP8TOaVjb/mv5cd6NH2fED9Q3Iigrv9CCVCIqNijEyDORt3hkiWr7AQo95MPfEoUO8kM099XQ3KkbFtjrRjCiXJCDGFJbCc5+kgXLGe908ETz/ASKcpqWMntBAgTwYEe4oFDNfDVQ0CSRywT7jAqy3kSxXHMPtRswzrZlUivLuCQn6ZMcLgpqOh9NFc6e3ExrQm/YOC+tAZkXmJu9vtoBvVxoCwaeNLai+T+Tc9i7c4YkaFHfmnXYftbV2yVeq7WPURnHLNkvZGnsyns/kqyPRNKE/l9K0tjVO5I08e4LbRR4yFvKaypwUYDlNeUB4uobLOzdZmFtv0RzuLJcaabfQ//jlWW6p9To0/ZvrSmZvcWtpX1c9eC4+pEByKrH5wpZbi7Z+sGhlcoWCucIJCgV0UgjqI0x8n3lCvhvkEA/XIK5dujpVWYacZWNH+iGq6dj1fC8s7v19UE8eyS0KRH0VNfpQfYiHqsvSse4SWqNePUHX+1qK1jV+KrVDTugZQo9G3qCE7KCL8sGMRXywHYdUJJ9CHVsrU8yA7G6v7by4y8g7UALIez3xktBxfFzXb5YGU5YW4uu03u2TLurE296blutb55ZkbSQWdefKJ/pPZN4y3dAzcACzZZt3o6SdCKVz+ft6ceFN35sWu5snLb2W6TtNa+VHvvnCD15c6oKOb5CdbBBWkYX2EZogPPjN1kQ76yZq4HvqkLWneVh0Dv2e4+EQ6Gp06NXUk+uYMto7qdh0bqCrL/2Tnr+4oRu91tMY979ooXDPw==&lt;/diagram&gt;&lt;/mxfile&gt;">
+    <defs/>
+    <g>
+        <path d="M 7 75 L 90.63 75" fill="none" stroke="#000000" stroke-miterlimit="10" pointer-events="stroke"/>
+        <path d="M 95.88 75 L 88.88 78.5 L 90.63 75 L 88.88 71.5 Z" fill="#000000" stroke="#000000" stroke-miterlimit="10" pointer-events="all"/>
+        <path d="M 97 95 L 97 35" fill="none" stroke="#000000" stroke-miterlimit="10" stroke-dasharray="3 3" pointer-events="stroke"/>
+        <rect x="7" y="0" width="120" height="30" fill="none" stroke="none" pointer-events="all"/>
+        <g transform="translate(-0.5 -0.5)">
+            <switch>
+                <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+                    <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 118px; height: 1px; padding-top: 15px; margin-left: 8px;">
+                        <div style="box-sizing: border-box; font-size: 0; text-align: center; ">
+                            <div style="display: inline-block; font-size: 12px; font-family: Helvetica; color: #000000; line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
+                                deletionTimestamp is set on the Pod
+                            </div>
+                        </div>
+                    </div>
+                </foreignObject>
+                <text x="67" y="19" fill="#000000" font-family="Helvetica" font-size="12px" text-anchor="middle">
+                    deletionTimestamp is set on...
+                </text>
+            </switch>
+        </g>
+        <path d="M 128.5 110 L 329.13 110" fill="none" stroke="#000000" stroke-miterlimit="10" pointer-events="stroke"/>
+        <ellipse cx="125.5" cy="110" rx="3" ry="3" fill="#000000" stroke="#000000" pointer-events="all"/>
+        <path d="M 334.38 110 L 327.38 113.5 L 329.13 110 L 327.38 106.5 Z" fill="#000000" stroke="#000000" stroke-miterlimit="10" pointer-events="all"/>
+        <path d="M 125.5 130 L 125.5 70" fill="none" stroke="#000000" stroke-miterlimit="10" stroke-dasharray="3 3" pointer-events="stroke"/>
+        <path d="M 335.5 130 L 335.5 70" fill="none" stroke="#000000" stroke-miterlimit="10" stroke-dasharray="3 3" pointer-events="stroke"/>
+        <rect x="155.5" y="75" width="150" height="30" fill="none" stroke="none" pointer-events="all"/>
+        <g transform="translate(-0.5 -0.5)">
+            <switch>
+                <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+                    <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 148px; height: 1px; padding-top: 90px; margin-left: 157px;">
+                        <div style="box-sizing: border-box; font-size: 0; text-align: center; ">
+                            <div style="display: inline-block; font-size: 12px; font-family: Helvetica; color: #000000; line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
+                                Creation of the missing Pods
+                            </div>
+                        </div>
+                    </div>
+                </foreignObject>
+                <text x="231" y="94" fill="#000000" font-family="Helvetica" font-size="12px" text-anchor="middle">
+                    Creation of the missing Pods
+                </text>
+            </switch>
+        </g>
+        <rect x="97" y="170" width="267" height="40" rx="20" ry="20" fill="#ffffff" stroke="#000000" pointer-events="all"/>
+        <g transform="translate(-0.5 -0.5)">
+            <switch>
+                <foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility">
+                    <div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 261px; height: 1px; padding-top: 190px; margin-left: 100px;">
+                        <div style="box-sizing: border-box; font-size: 0; text-align: center; ">
+                            <div style="display: inline-block; font-size: 12px; font-family: Helvetica; color: #000000; line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">
+                                A Pod with deletionTimestamp set
+                                <br/>
+                                is not counted as an owned resource
+                            </div>
+                        </div>
+                    </div>
+                </foreignObject>
+                <text x="231" y="194" fill="#000000" font-family="Helvetica" font-size="12px" text-anchor="middle">
+                    A Pod with deletionTimestamp set...
+                </text>
+            </switch>
+        </g>
+        <path d="M 125.5 130 Q 135.5 130 148.1 150 Q 160.69 170 170.69 170" fill="none" stroke="#000000" stroke-miterlimit="10" pointer-events="stroke"/>
+    </g>
+    <switch>
+        <g requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"/>
+        <a transform="translate(0,-5)" xlink:href="https://desk.draw.io/support/solutions/articles/16000042487" target="_blank">
+            <text text-anchor="middle" font-size="10px" x="50%" y="100%">
+                Viewer does not support full SVG 1.1
+            </text>
+        </a>
+    </switch>
+</svg>
