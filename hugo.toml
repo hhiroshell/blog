@@ -12,7 +12,7 @@ defaultContentLanguageInSubdir = true
   [languages.en.params]
     [languages.en.params.homeInfoParams]
       Title = "Hi there"
-      Content = "Welcome to alpaca-lab.blog — a blog about technology, software, and custom keyboards."
+      Content = "Welcome to alpaca-lab.blog — a blog about technology 💻, software 🛠️, and custom keyboards ⌨️."
 
   [[languages.en.menus.main]]
     identifier = "posts"
@@ -34,7 +34,7 @@ defaultContentLanguageInSubdir = true
   [languages.ja.params]
     [languages.ja.params.homeInfoParams]
       Title = "こんにちは"
-      Content = "alpaca-lab.blog へようこそ。これはテクノロジーやソフトウェア、自作キーボードについて書いていくブログです。"
+      Content = "alpaca-lab.blog へようこそ。これはテクノロジー💻やソフトウェア🛠️、自作キーボード⌨️について書いていくブログです。"
 
   [[languages.ja.menus.main]]
     identifier = "posts"
@@ -49,6 +49,7 @@ defaultContentLanguageInSubdir = true
     weight = 20
 
 [params]
+  avatarURL = "images/avatar.jpg"
   ShowReadingTime = true
   ShowShareButtons = false
   ShowPostNavLinks = true
