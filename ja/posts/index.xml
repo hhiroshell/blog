@@ -1,4 +1,43 @@
-<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>Posts on alpaca-lab.blog</title><link>https://alpaca-lab.blog/ja/posts/</link><description>Recent content in Posts on alpaca-lab.blog</description><generator>Hugo -- 0.156.0</generator><language>ja</language><lastBuildDate>Thu, 21 Dec 2023 00:00:00 +0000</lastBuildDate><atom:link href="https://alpaca-lab.blog/ja/posts/index.xml" rel="self" type="application/rss+xml"/><item><title>Pod内に複数のコンテナがある場合の起動シーケンス</title><link>https://alpaca-lab.blog/ja/posts/kubernetes-startup-sequence-of-pods/</link><pubDate>Thu, 21 Dec 2023 00:00:00 +0000</pubDate><guid>https://alpaca-lab.blog/ja/posts/kubernetes-startup-sequence-of-pods/</guid><description>&lt;h2 id="これはなに"&gt;これはなに&lt;/h2&gt;
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>Posts on alpaca-lab.blog</title><link>https://alpaca-lab.blog/ja/posts/</link><description>Recent content in Posts on alpaca-lab.blog</description><generator>Hugo -- 0.156.0</generator><language>ja</language><lastBuildDate>Fri, 18 Sep 2026 00:00:00 +0000</lastBuildDate><atom:link href="https://alpaca-lab.blog/ja/posts/index.xml" rel="self" type="application/rss+xml"/><item><title>スイッチ1個・ハンダ付けなしでZMKワイヤレスキーボードのPoCを作る</title><link>https://alpaca-lab.blog/ja/posts/single-key-zmk-poc/</link><pubDate>Fri, 18 Sep 2026 00:00:00 +0000</pubDate><guid>https://alpaca-lab.blog/ja/posts/single-key-zmk-poc/</guid><description>&lt;h2 id="これはなに"&gt;これはなに&lt;/h2&gt;
+&lt;p&gt;現在愛用中の自作キーボードは、Pro Micro + QMK Firmwareという定番構成の有線キーボードなのですが、これの完全無線化バージョンを作りたいと思い立ちまして、手始めにXIAO nRF52840と&lt;a href="https://zmk.dev/"&gt;ZMK&lt;/a&gt;に触ってみることにしました。&lt;/p&gt;
+&lt;p&gt;まずは最小構成で「ZMKの設定リポジトリ作成 → ビルド → 書き込み → Bluetooth接続」までの一連の流れを体験してみたので、この記事ではその内容を共有します。&lt;/p&gt;
+&lt;p&gt;用意したのはスイッチ1個だけです。ハンダ付けもブレッドボードも使わず、マイコンのパッドにICテストフックを挟むだけの配線にしました。PoCが終わったあとも、パーツを元の状態に戻しやすくするためです。&lt;/p&gt;
+&lt;h2 id="ハードウェア構成"&gt;ハードウェア構成&lt;/h2&gt;
+&lt;ul&gt;
+&lt;li&gt;マイコン: &lt;a href="https://wiki.seeedstudio.com/XIAO_BLE/"&gt;Seeed Studio XIAO nRF52840&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;スイッチ: Cherry MX互換のキースイッチ1個&lt;/li&gt;
+&lt;li&gt;配線: XIAO本体のパッドにICテストフック（グラバー）を直接クランプし、スイッチの端子へ2本だけ配線
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;D0&lt;/code&gt;（&lt;code&gt;P0.02&lt;/code&gt;） → スイッチの一方の端子&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;GND&lt;/code&gt; → スイッチのもう一方の端子&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;外付けのプルアップ抵抗はなし。GPIOの内部プルアップに依存&lt;/li&gt;
+&lt;li&gt;電源: USB-C給電（モバイルバッテリー）&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;配線はこんな感じです。&lt;/p&gt;
+&lt;p&gt;&lt;img alt="XIAO nRF52840とキースイッチの配線" loading="lazy" src="https://alpaca-lab.blog/images/single-key-zmk-poc-01.jpg"&gt;&lt;/p&gt;
+&lt;p&gt;ハンダ付けなしで気軽に試せるように、モバイルバッテリーからUSB-C給電しつつ動かしました。キーキャップには実際に送信するキーコードと同じ「A」を貼っています。&lt;/p&gt;
+&lt;p&gt;&lt;img alt="モバイルバッテリー給電でのセットアップ全体" loading="lazy" src="https://alpaca-lab.blog/images/single-key-zmk-poc-02.jpg"&gt;&lt;/p&gt;
+&lt;h2 id="zmk設定リポジトリを作る"&gt;ZMK設定リポジトリを作る&lt;/h2&gt;
+&lt;p&gt;ZMKには公式の&lt;a href="https://github.com/zmkfirmware/zmk-cli"&gt;ZMK CLI&lt;/a&gt;（&lt;code&gt;uv tool install zmk&lt;/code&gt;→&lt;code&gt;zmk init&lt;/code&gt;）が用意されていて、対話的にGitHubリポジトリの作成までできるようです。ただ今回は、生成される構成をきちんと理解したかったので、ZMK公式の&lt;a href="https://github.com/zmkfirmware/unified-zmk-config-template"&gt;unified-zmk-config-template&lt;/a&gt;をベースに、必要なファイルを手で組み立てました。&lt;/p&gt;
+&lt;p&gt;最終的にできたリポジトリはこちらです。&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href="https://github.com/hhiroshell/zmk-config"&gt;hhiroshell/zmk-config&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;ディレクトリ構成は次のようになりました。&lt;/p&gt;
+&lt;pre tabindex="0"&gt;&lt;code&gt;zmk-config/
+├── .github/workflows/build.yml # ZMK公式の再利用可能workflowを呼ぶだけ
+├── boards/shields/single_key/ # 自作シールド本体
+│ ├── Kconfig.shield
+│ ├── Kconfig.defconfig
+│ ├── single_key.overlay # ハードウェア定義（kscan / GPIO）
+│ ├── single_key.keymap # キーコード
+│ └── single_key.conf
+├── build.yaml # ビルドマトリクス（board + shield の組み合わせ）
+├── config/west.yml # ZMK本体を取得するmanifest
+└── zephyr/module.yml # このリポジトリをboard/shieldの検索パスに登録
+&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;ポイントは&lt;code&gt;zephyr/module.yml&lt;/code&gt;です。&lt;/p&gt;</description></item><item><title>Pod内に複数のコンテナがある場合の起動シーケンス</title><link>https://alpaca-lab.blog/ja/posts/kubernetes-startup-sequence-of-pods/</link><pubDate>Thu, 21 Dec 2023 00:00:00 +0000</pubDate><guid>https://alpaca-lab.blog/ja/posts/kubernetes-startup-sequence-of-pods/</guid><description>&lt;h2 id="これはなに"&gt;これはなに&lt;/h2&gt;
 &lt;p&gt;「Kubernetesマイクロサービス開発の実践」というKubernetes本を執筆しまして、めでたく先日発売となりました！ぜひ買ってくださいー。&lt;/p&gt;
 &lt;ul&gt;
 &lt;li&gt;「&lt;a href="https://www.amazon.co.jp/dp/4295018147/"&gt;Kubernetesマイクロサービス開発の実践&lt;/a&gt;」&lt;/li&gt;
