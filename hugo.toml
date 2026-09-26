@@ -50,6 +50,7 @@ defaultContentLanguageInSubdir = true
 
 [params]
   avatarURL = "images/avatar.jpg"
+  images = ["images/avatar.jpg"]
   ShowReadingTime = true
   ShowShareButtons = false
   ShowPostNavLinks = true
