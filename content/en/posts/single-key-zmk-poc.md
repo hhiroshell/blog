@@ -13,9 +13,6 @@ I wanted to walk through the whole loop first at the smallest possible scale —
 
 All I used was a single switch. No soldering, no breadboard — just an IC test hook clipped onto the microcontroller's pads. That way, even after the PoC is done, it's easy to put the parts back to their original state.
 
-> 📘【note】
-> This post is based on a work log from a session with Claude Code. It helped with researching ZMK's spec, writing the files, checking the GitHub Actions build, and flashing the actual hardware.
-
 
 Hardware
 ---
